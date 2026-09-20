@@ -4,7 +4,7 @@ from functools import cache
 import numpy as np
 from scipy.special import log_softmax, logsumexp
 
-from .common import CLASSES, SYSTEM, intro
+from .common import SYSTEM, intro
 
 VARIANTS = ["gap", "p_yn", "y_logit", "p_full"]
 
@@ -14,7 +14,7 @@ def _yn_ids(model):
     return [model.tok("Y"), model.tok("N")]
 
 
-def score_yn(model, article):
+def score_yn(model, article, classes):
     """One pass per class. Returns ({variant: one score per class}, mass_yn per class).
 
     gap     = logit(Y) - logit(N)
@@ -23,11 +23,11 @@ def score_yn(model, article):
     p_full  = log p(Y) with the softmax over the whole vocabulary, no N token involved
     mass_yn = probability mass on {Y, N} in the full vocabulary (do the tokens even get used?)
     """
-    opts = "\n".join(f"- {c}" for c in CLASSES)
+    opts = "\n".join(f"- {c}" for c in classes)
     y, n = _yn_ids(model)
     out = {v: [] for v in VARIANTS}
     mass = []
-    for c in CLASSES:
+    for c in classes:
         prompt = model.chat(
             f'{intro(article)}{opts}\n\nIs "{c}" the most likely topic?',
             system=SYSTEM.format(answer='"Y" or "N"'),

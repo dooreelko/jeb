@@ -1,21 +1,23 @@
-"""Multiple-choice scorer: one pass, options labelled A/B/C/D, read the label-token logits."""
+"""Multiple-choice scorer: one pass, options labelled A, B, C, ..., read the label-token logits."""
+import string
 from functools import cache
 
-from .common import CLASSES, SYSTEM, intro
-
-LABELS = ["A", "B", "C", "D"]
+from .common import SYSTEM, intro
 
 
 @cache
-def _label_ids(model):
-    return [model.tok(l) for l in LABELS]
+def _label_ids(model, n):
+    return [model.tok(l) for l in string.ascii_uppercase[:n]]
 
 
-def score_mc(model, article):
-    """Returns one score per class (label-token logits)."""
-    opts = "\n".join(f"{l}. {c}" for l, c in zip(LABELS, CLASSES))
+def score_mc(model, article, classes):
+    """Returns one score per class (label-token logits). Works for up to 26 classes."""
+    assert len(classes) <= 26, "one letter per option"
+    labels = string.ascii_uppercase[: len(classes)]
+    opts = "\n".join(f"{l}. {c}" for l, c in zip(labels, classes))
+    quoted = ", ".join(f'"{l}"' for l in labels[:-1]) + f' or "{labels[-1]}"'
     prompt = model.chat(
         f"{intro(article)}{opts}\n\nWhich topic is the most likely one?",
-        system=SYSTEM.format(answer='with the letter of one option, "A", "B", "C" or "D"'),
+        system=SYSTEM.format(answer=f"with the letter of one option, {quoted}"),
     )
-    return model.last_logits(prompt)[_label_ids(model)]
+    return model.last_logits(prompt)[_label_ids(model, len(classes))]

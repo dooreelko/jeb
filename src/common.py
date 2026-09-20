@@ -5,8 +5,6 @@ import numpy as np
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 from llama_cpp import Llama
 
-CLASSES = ["World news", "Sports", "Business", "Science and technology"]  # ag_news label order
-
 SYSTEM = "You are a decision maker. You can only answer {answer}."
 
 
