@@ -1,16 +1,14 @@
 """Baseline: ordinary greedy generation, parsed back to a class index (-1 if unparseable)."""
-from .common import CLASSES
+from .common import CLASSES, intro
 
 
 def gen_baseline(model, article):
-    out = model.llm.create_chat_completion(
-        messages=[{
-            "role": "user",
-            "content": f"Article: {article}\n\nClassify the topic as one of: {', '.join(CLASSES)}. Reply with only the topic name.",
-        }],
-        max_tokens=8, temperature=0,
+    opts = "\n".join(f"- {c}" for c in CLASSES)
+    prompt = model.chat(
+        f"{intro(article)}{opts}\n\nWhich topic is the most likely one? Reply with only the topic name.",
+        system="You are a decision maker.",
     )
-    txt = out["choices"][0]["message"]["content"].strip().lower()
+    txt = model.generate(prompt, max_tokens=8).strip().lower()
     for i, c in enumerate(CLASSES):
         if txt.startswith(c.lower()):
             return i

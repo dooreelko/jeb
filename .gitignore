@@ -10,3 +10,5 @@ wheels/
 .venv
 models
 .direnv
+logs
+scores*

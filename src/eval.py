@@ -1,6 +1,6 @@
 """Compare logit-readout scorers (MC vs README-style Y/N) on ag_news.
 
-usage: uv run python -u -m src.eval [model.gguf] [n_examples]
+usage: scripts/run.sh [model.gguf] [n_examples]      (runs this in the nix shell, needed for ROCm)
 """
 import sys
 import time
@@ -12,11 +12,11 @@ from .common import Model
 from .gen import gen_baseline
 from .mc import score_mc
 from .metrics import report
-from .yn import score_yn
+from .yn import VARIANTS, score_yn
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    path = sys.argv[1] if len(sys.argv) > 1 else "models/Qwen3.5-4B-Q4_K_M.gguf"
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 200
     model = Model(path)
 
@@ -24,24 +24,37 @@ def main():
     arts = [t[:600] for t in ds["text"]]
     y = np.array(ds["label"])
 
-    S = {"mc": [], "yn_gap": [], "yn_p": []}
-    gen_pred = []
-    t_mc = t_yn = t_gen = 0.0
+    score_mc(model, arts[0]); score_yn(model, arts[0]); gen_baseline(model, arts[0])  # warm up GPU kernels
+
+    S = {"mc": [], **{f"yn_{v}": [] for v in VARIANTS}}
+    mass, gen_pred = [], []
+    lat = {"mc": [], "yn": [], "gen": []}
+
+    def timed(key, fn, *a):
+        t = time.perf_counter(); r = fn(*a); lat[key].append(time.perf_counter() - t)
+        return r
+
     for i, a in enumerate(arts):
-        t = time.perf_counter(); S["mc"].append(score_mc(model, a)); t_mc += time.perf_counter() - t
-        t = time.perf_counter(); gap, lp = score_yn(model, a); t_yn += time.perf_counter() - t
-        S["yn_gap"].append(gap); S["yn_p"].append(lp)
-        t = time.perf_counter(); gen_pred.append(gen_baseline(model, a)); t_gen += time.perf_counter() - t
-        if i % 20 == 0:
+        S["mc"].append(timed("mc", score_mc, model, a))
+        variants, m = timed("yn", score_yn, model, a)
+        for v in VARIANTS:
+            S[f"yn_{v}"].append(variants[v])
+        mass.append(m)
+        gen_pred.append(timed("gen", gen_baseline, model, a))
+        if i % 10 == 0:
             print(f"  {i}/{n}", flush=True)
 
     S = {k: np.array(v) for k, v in S.items()}
-    np.savez(f"scores_{path.split('/')[-1]}.npz", y=y, gen=np.array(gen_pred), **S)
+    name = path.split("/")[-1]
+    np.savez(f"scores_{name}.npz", y=y, gen=np.array(gen_pred), mass=np.array(mass),
+             **{f"lat_{k}": np.array(v) for k, v in lat.items()}, **S)
+
     print(f"\nmodel={path} n={n}  (eval on 2nd half; T fitted on 1st half)")
     for k, v in S.items():
         report(k, v, y)
-    print(f"gen      acc={np.mean(np.array(gen_pred)[n // 2:] == y[n // 2:]):.3f}")
-    print(f"latency/question: mc={t_mc / n * 1000:.0f}ms  yn({len(S['yn_p'][0])} passes)={t_yn / n * 1000:.0f}ms  gen={t_gen / n * 1000:.0f}ms")
+    print(f"gen      acc={np.mean(np.array(gen_pred)[n // 2:] == y[n // 2:]):.3f}  unparsed={np.mean(np.array(gen_pred) == -1):.3f}")
+    print(f"mass on {{Y,N}}: mean={np.mean(mass):.3f} min={np.min(mass):.3f}")
+    print("latency/question: " + "  ".join(f"{k}={np.mean(v) * 1000:.0f}ms" for k, v in lat.items()))
 
 
 if __name__ == "__main__":

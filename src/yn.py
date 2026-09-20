@@ -2,11 +2,11 @@
 from functools import cache
 
 import numpy as np
-from scipy.special import log_softmax
+from scipy.special import log_softmax, logsumexp
 
-from .common import CLASSES
+from .common import CLASSES, SYSTEM, intro
 
-SYSTEM = 'You are a decision maker. You can only answer "Y" or "N".'
+VARIANTS = ["gap", "p_yn", "y_logit", "p_full"]
 
 
 @cache
@@ -15,17 +15,28 @@ def _yn_ids(model):
 
 
 def score_yn(model, article):
-    """N passes (one per class). Returns (gap, log_p_yes), each one score per class:
-    gap = logit(Y) - logit(N);  log_p_yes = log softmax over {Y, N} at Y."""
+    """One pass per class. Returns ({variant: one score per class}, mass_yn per class).
+
+    gap     = logit(Y) - logit(N)
+    p_yn    = log p(Y) with the softmax taken over {Y, N} only
+    y_logit = logit(Y) alone, no N involved
+    p_full  = log p(Y) with the softmax over the whole vocabulary, no N token involved
+    mass_yn = probability mass on {Y, N} in the full vocabulary (do the tokens even get used?)
+    """
     opts = "\n".join(f"- {c}" for c in CLASSES)
-    yn = _yn_ids(model)
-    gaps, log_pys = [], []
+    y, n = _yn_ids(model)
+    out = {v: [] for v in VARIANTS}
+    mass = []
     for c in CLASSES:
         prompt = model.chat(
-            f'Given a context of "{article}" and possible topics of\n{opts}\n\nIs "{c}" the most likely topic?',
-            system=SYSTEM,
+            f'{intro(article)}{opts}\n\nIs "{c}" the most likely topic?',
+            system=SYSTEM.format(answer='"Y" or "N"'),
         )
-        y_n = model.last_logits(prompt)[yn]
-        gaps.append(y_n[0] - y_n[1])
-        log_pys.append(log_softmax(y_n)[0])
-    return np.array(gaps), np.array(log_pys)
+        lg = model.last_logits(prompt)
+        z = logsumexp(lg)
+        out["gap"].append(lg[y] - lg[n])
+        out["p_yn"].append(log_softmax(lg[[y, n]])[0])
+        out["y_logit"].append(lg[y])
+        out["p_full"].append(lg[y] - z)
+        mass.append(np.exp(logsumexp(lg[[y, n]]) - z))
+    return {k: np.array(v) for k, v in out.items()}, np.array(mass)
