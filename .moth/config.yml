@@ -1,0 +1,16 @@
+statuses:
+- name: ready
+  dir: ready
+  prioritized: true
+- name: doing
+  dir: doing
+  prioritized: false
+- name: done
+  dir: done
+  prioritized: false
+default_severity: med
+editor: vi
+id_length: 5
+no_edit: false
+priority:
+  auto_compact: false
