@@ -138,23 +138,44 @@ the corrected setup.
 | | Y/N log p(Y) over {Y,N} | 0.86 | 0.70 | 0.325 -> 0.123 | 0.29 |
 | | Y/N Y-logit only | 0.82 | 0.54 | 0.150 -> 0.049 | 0.57 |
 | | greedy generation | 0.86 | n/a | n/a | n/a |
+| Qwen3.8 27B | MC | 0.81 | 0.69 | 0.104 -> 0.085 | 2.03 |
+| | Y/N gap | 0.84 | 0.77 | 0.126 -> 0.048 | 3.51 |
+| | Y/N log p(Y) over {Y,N} | 0.84 | 0.45 | 0.128 -> 0.058 | 1.77 |
+| | Y/N Y-logit only | 0.84 | 0.50 | 0.116 -> 0.042 | 1.87 |
+| | greedy generation | 0.81 | n/a | n/a | n/a |
 
 Latency per question (GPU): 4B: MC 0.6 s, Y/N 2.1 s (four passes), generation 0.6 s.
-9B: MC 1.0 s, Y/N 3.6 s, generation 1.1 s. Qwen3.8 27B: run in progress.
+9B: MC 1.0 s, Y/N 3.6 s, generation 1.1 s. 27B: MC 3.4 s, Y/N 11.9 s, generation 3.4 s.
+
+Accuracy over all 200 examples (no calibration split needed, standard error about 2.3 points):
+
+| model | MC | Y/N gap | Y/N Y-logit | generation |
+|---|---|---|---|---|
+| Qwen3.5 4B | 0.88 | 0.83 | 0.85 | 0.84 |
+| Qwen3.5 9B | 0.89 | 0.87 | 0.85 | 0.86 |
+| Qwen3.8 27B | 0.84 | 0.86 | 0.85 | 0.83 |
 
 ## Findings so far (tentative)
-- MC is at least as accurate as Y/N in every run and better calibrated raw, though the gap
-  narrows with size (about 7 points at 4B, 2 at 9B) and is within noise at 100 examples.
+- On ag_news no method and no size clearly wins: all accuracies fall in 0.83-0.89. MC led at
+  4B and 9B, Y/N at 27B, all within noise (at 27B, paired: 2 examples only MC got right,
+  5 only Y/N got right). A 27B model is not more accurate than a 4B one here.
+- The dataset itself caps accuracy. The 27B's MC errors are dominated by one confusion:
+  true "Science and technology" articles predicted as "Business" (24 of 54; every other class
+  is 46-48 of about 50). This is the known Business/Sci-Tech overlap in ag_news labeling, a
+  ceiling near 88-90% that no model size removes, so ag_news cannot separate methods or
+  sizes; a cleaner, wider-class dataset is needed.
 - Modern instruction models are far closer to calibrated than the early result suggested
   (fitted temperatures near 1); how much of that is the model versus the corrected prompt
   format is not separated.
-- Calibration does not transfer across model sizes: the same Y/N score is overconfident at
-  one size and underconfident at another, so each model needs its own fit.
+- Calibration does not transfer across model sizes and is not monotone in size: the same score
+  is near-calibrated at 9B, overconfident at 27B (fitted temperatures 1.8-3.5), and
+  underconfident for one Y/N variant at 9B, so each model needs its own fit.
 - The "N" reading appears unnecessary for ranking: Y alone ranks about as well as the gap
   on both sizes and the full-vocabulary and {Y,N} versions coincide because nearly all mass
   (>0.99) sits on Y/N. Tentative; decided in its own task.
-- One-pass MC costs about the same as greedy generation, because the generated answer is
-  only a few tokens and prefill dominates either way. Y/N costs about 3.5x more because it
+- One-pass MC costs about the same as greedy generation at every size (0.6, 1.0, 3.4 s), because
+  the generated answer is only a few tokens and prefill dominates either way. Latency grows
+  roughly with parameter count. Y/N costs about 3.5x more because it
   re-processes the same context once per option. A latency win over generation is only
   expected once generation would be long or the passes share their context.
 - Y/N verdicts are independent, so the answer can be inconsistent: at 4B, 7.5% of articles
@@ -164,10 +185,12 @@ Latency per question (GPU): 4B: MC 0.6 s, Y/N 2.1 s (four passes), generation 0.
   come from avoiding redundant prefill, not from the device.
 
 ## Open
-- Finish the 27B run; add a base-model variant; enlarge the example count to tighten the
-  error bars.
-- Implement the sequence-batching version of the Y/N scorer and measure its latency against
-  the sequential one and against generation.
-- Rerun the Qwen2.5 3B under the corrected setup only if the size-vs-method comparison needs
-  it.
+- Move off ag_news to a cleaner dataset with more classes (14-class DBpedia ontology first) and
+  more examples, so methods and sizes can actually be told apart; rerun the size ladder there.
+- Direction: leaning towards dropping the per-option Y/N scorer and keeping multiple choice.
+  Y/N code and results stay until that is confirmed; the separate "is N needed" task becomes
+  moot if it is dropped.
+- Implement sequence batching (shared context, one decode) and measure whether latency can
+  beat greedy generation; that is where the method could win, not on accuracy.
+- Add a base-model variant for the base-vs-instruct calibration comparison.
 - Decide whether a fork is warranted once latency is known.
