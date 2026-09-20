@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the comparison inside the nix shell (ROCm libs + gfx override), teeing raw output to logs/.
-# usage: scripts/run.sh [model.gguf] [n_examples] [eval options, e.g. --dataset dbpedia_14 --no-yn]
+# usage: scripts/run.sh [model.gguf] [n_examples] [eval options, e.g. --dataset dbpedia_14 --hide 3]
 # (works from any directory)
 set -euo pipefail
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/_common.sh"
