@@ -9,6 +9,8 @@ last option, "None of the above", lets the model abstain. This repo measures acc
 calibration and latency against ordinary greedy generation, and tests the abstention.
 Findings and decisions are tracked in the moth tasks (`moth ls`, `moth show <id>`), not here.
 
+![Playing Flappy bird](./flappy.gif)
+
 ## Getting started
 
 Prerequisite: [nix](https://nixos.org/). `shell.nix` provides everything else: `uv`, `moth`,
@@ -83,7 +85,8 @@ file of the same name.
 ```
 scripts/
   run.sh          run src.eval in the nix shell, tee the output to logs/
-  flappy.sh       play Flappy Bird (src.flappy), tee the output to logs/
+  flappy.sh       play Flappy Bird with the winning setup (src/flappy.py), tee the output to logs/
+  flappy-experiments.sh  the full experiment runner (src/flappy-experiments.py)
   build-llama.sh  rebuild llama-cpp-python with the HIP backend
   _common.sh      shared helper: finds the project root, re-enters the nix shell
 src/
@@ -95,7 +98,8 @@ src/
   abstain.py  the abstention test and its metrics
   eval.py     runner (dispatches to abstain.py for --hide)
   jev.py      Jev: probabilities over any list of options (a thin wrapper on score_mc)
-  flappy.py   turn-based Flappy Bird, ASCII view, policies, balanced-state metric
+  flappy.py   the winning Flappy Bird setup in about 90 lines: game, semantic state, one-pass readout
+  flappy-experiments.py  every prompt, option style and policy we tried, with the metrics
 ```
 
 **Prompts.** They are rendered with the chat template embedded in the GGUF, so any model family
@@ -144,7 +148,8 @@ sample and vary `--hide-seed`.
 
 [openjev](https://huggingface.co/AlexWortega/openjev) plays Flappy Bird with a fine-tuned NLI model
 (about 27.5 pipes out of a possible 28). We run the same game, turn-based, through the multiple-choice
-readout (`scripts/flappy.sh`, `--watch` draws it in the terminal). Details in [flappy.md](flappy.md).
+readout (`scripts/flappy.sh`; it draws the game in the terminal, `--no-watch` turns that off; the ablations are in
+`scripts/flappy-experiments.sh`). Details in [flappy.md](flappy.md).
 
 - With raw numbers in the prompt the 4B scores at most 8.33 pipes, and 0 with openjev's verbatim text.
 - With the state bucketed in code and sent as words ("The bird is far below the centre of the gap and is

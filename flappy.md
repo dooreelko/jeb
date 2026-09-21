@@ -2,8 +2,8 @@
 
 Turn-based Flappy Bird with openjev's physics, played by a plain Qwen3.5 through the multiple-choice
 readout (one pass, options `A`/`B`, argmax picks the move, option A = flap). The target is openjev's
-27.5-28 pipes; a perfect rule scores 28 and a lookahead oracle about 25. Run it with `scripts/flappy.sh`
-(`--watch` draws the game in the terminal). Decisions and numbers are also in moth `cjd4t`.
+27.5-28 pipes; a perfect rule scores 28 and a lookahead oracle about 25. Run the winning setup with `scripts/flappy.sh` (the ablations: `scripts/flappy-experiments.sh`)
+(it draws the game in the terminal; `--no-watch` turns that off). Decisions and numbers are also in moth `cjd4t`.
 
 ## What we learned
 
