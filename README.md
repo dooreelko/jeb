@@ -146,17 +146,17 @@ sample and vary `--hide-seed`.
 (about 27.5 pipes out of a possible 28). We run the same game, turn-based, through the multiple-choice
 readout (`scripts/flappy.sh`, `--watch` draws it in the terminal). Details in [flappy.md](flappy.md).
 
-- The 4B reads the state well (AUROC 0.94-0.97 for "bird below the gap centre") but plays badly: at most
-  8.33 pipes, against 28 for a perfect rule. About 5% wrong decisions compound; every death is a spurious
-  flap while already high. The 9B was no better (5.83).
-- The prompt wording swings the score from 0 to about 8. The signed offset from the gap centre is the
-  essential input; extra framing (openjev's goal sentence) shifts the boundary toward "flap".
-  With openjev's verbatim text we score 0, so we are not close to their number.
-- **Best approach so far** (the one that scored 8.33): position statements as options ("The bird is
-  below/above the centre of the gap", no final period), a short numeric state with the signed offset from
-  the gap centre, no goal sentence, no position sentence, no hints. Do not use action wording. Caveat:
-  this text is shorter than openjev's, and the 8.33 is 6 episodes, so it is a lead, not a settled result.
-  Still untried: action repeat, a stricter flap threshold, few-shot examples.
+- With raw numbers in the prompt the 4B scores at most 8.33 pipes, and 0 with openjev's verbatim text.
+- With the state bucketed in code and sent as words ("The bird is far below the centre of the gap and is
+  rising fast."), as the Jev 1.13 docs recommend, it scores **28 in all six episodes** at plain argmax,
+  matching openjev's number.
+- **Best approach so far:** a semantic state (named buckets, only the fields the decision needs, no
+  numbers), options worded like the state ("The bird is below/above the centre of the gap"), plain
+  argmax. Tricks such as thresholds come last.
+- Read it carefully: the model executes a stated comparison, it does not infer the move. With
+  "Flap" / "Do nothing" and only a game description it scores 0. The statement-to-move mapping is
+  hand-written, and openjev's model reads raw numbers, so this is not a like-for-like comparison.
+  6 episodes, one model.
 
 ## Caveats
 
