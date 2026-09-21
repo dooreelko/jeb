@@ -68,3 +68,10 @@ Measured on 100 balanced states (below/above the gap centre), 4B, position wordi
 ## Fresh-seed check (added after the run)
 - The winning style (semantic state, position statements) scored 28 in all six episodes on six fresh seeds (2000-2005) that were not used while choosing prompts, so the result is not an artefact of the seeds prompts were tuned on. The goal-level line (actions plus "the bird wants to stay level with the centre of the gap") scored 0 on those seeds in all six episodes, like plain actions: the model cannot get from a goal to the move.
 - Still open: whether a model that thinks before answering can infer the move (tracked in bkv0v, Optional Thinking Mode), and robustness to other bucket edges. README and flappy.md updated.
+
+
+## Final state (at close)
+- Deliverable: a short, readable winning setup (src/flappy.py, about 90 lines, default smallest model Qwen3.5 0.8B, game drawn in the terminal with a flap indicator) and the full experiment runner (src/flappy-experiments.py) with every variant we tried. Findings are in flappy.md and summarised in the README.
+- Result: semantic state (named buckets, only the fields the decision needs, no numbers) with position statements as options scores 28 in all six episodes at plain argmax with the 4B on the tuning seeds and on six fresh seeds, and with the 0.8B on the tuning seeds. Numeric prompts scored 0-8; action wording and a goal line scored 0; sampling at temperature scored 0.
+- Reading of it: the game is saturated for this setup because the pipeline states the comparison the model has to match; it measures where the one-pass readout aligns with a target, not whether the model decides. Not a like-for-like comparison with openjev, whose model reads raw numbers.
+- Follow-ups: bkv0v (optional thinking mode: can reasoning rescue the action wording), rxor3 (real time and latency on the same hardware), tuxml, gy63u, t319t. Not done here: a harder variant that the one-comparison rule cannot solve, a non-LLM string-match baseline, robustness to other bucket edges, the 2B and 9B on the semantic setup.
