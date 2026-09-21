@@ -4,6 +4,8 @@ let
   moth = (builtins.getFlake "github:tailoredshapes/moth")
         .packages.${pkgs.system}.default;
 
+  agg = (builtins.getFlake "github:asciinema/agg").packages.${builtins.currentSystem}.default;
+
   # nixpkgs has no rocm-all meta package, so list what llama.cpp's HIP backend needs
   # plus the diagnostics (rocminfo, rocm-smi). All of it comes from the binary cache.
   rocm = pkgs.rocmPackages;
@@ -27,6 +29,10 @@ in pkgs.mkShellNoCC {
       pkgs.uv
 
       moth
+
+      # record the terminal game (asciinema) and turn the recording into a gif (agg)
+      pkgs.asciinema
+      agg
 
       # host toolchain for building llama-cpp-python
       pkgs.cmake

@@ -8,9 +8,9 @@ from llama_cpp import Llama
 SYSTEM = "You are a decision maker. You can only answer {answer}."
 
 
-def intro(article):
+def intro(article, noun="topic"):
     """Framing shared by every scorer, so prompts differ only in what the method needs."""
-    return f'Given a context of "{article}" and possible topics of\n'
+    return f'Given a context of "{article}" and possible {noun}s of\n'
 
 
 def _raise(msg):
