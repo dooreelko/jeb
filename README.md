@@ -149,7 +149,7 @@ readout (`scripts/flappy.sh`, `--watch` draws it in the terminal). Details in [f
 - With raw numbers in the prompt the 4B scores at most 8.33 pipes, and 0 with openjev's verbatim text.
 - With the state bucketed in code and sent as words ("The bird is far below the centre of the gap and is
   rising fast."), as the Jev 1.13 docs recommend, it scores **28 in all six episodes** at plain argmax,
-  matching openjev's number.
+  matching openjev's number, and again on six fresh seeds.
 - **Best approach so far:** a semantic state (named buckets, only the fields the decision needs, no
   numbers), options worded like the state ("The bird is below/above the centre of the gap"), plain
   argmax. Tricks such as thresholds come last.

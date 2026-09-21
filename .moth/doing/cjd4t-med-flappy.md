@@ -63,3 +63,8 @@ Measured on 100 balanced states (below/above the gap centre), 4B, position wordi
 - Reading of the result: the model executes a clearly stated comparison perfectly, and cannot infer the move from how the game works. The 28 mostly reflects the pre-digested state and my hand-written statement-to-move mapping; it is not evidence that the model decides the game, and it is no longer a like-for-like comparison with openjev, whose model reads raw numbers.
 - Death traces on the numeric text: every death was a near-tie flap (p 0.51-0.59) when the bird was already far above the gap and starting to fall; the model reacted to "falling" more than to position.
 - Next: a goal-level middle ground (a line saying the bird wants to stay level with the gap centre, in place of the rule) on fresh seeds, to test whether the model can decide rather than restate. Then robustness (other seeds, other bucket edges) and a rewrite of the README and flappy.md, which are outdated.
+
+
+## Fresh-seed check (added after the run)
+- The winning style (semantic state, position statements) scored 28 in all six episodes on six fresh seeds (2000-2005) that were not used while choosing prompts, so the result is not an artefact of the seeds prompts were tuned on. The goal-level line (actions plus "the bird wants to stay level with the centre of the gap") scored 0 on those seeds in all six episodes, like plain actions: the model cannot get from a goal to the move.
+- Still open: whether a model that thinks before answering can infer the move (tracked in bkv0v, Optional Thinking Mode), and robustness to other bucket edges. README and flappy.md updated.

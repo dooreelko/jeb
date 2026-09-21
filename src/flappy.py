@@ -4,9 +4,13 @@ The game state is described in words (the context) and the model picks one of tw
 game waits for the decision, so latency does not affect the score. Physics follow openjev's
 Flappy Bird so scores are roughly comparable (900 steps = up to 28 pipes).
 
-usage: scripts/flappy.sh [--policy jev|oracle|random|never] [--options actions|position]
-                         [--episodes N] [--max-steps M] [--watch] [--model path.gguf]
-       scripts/flappy.sh --agree N   how often the model agrees with the oracle on N visited states
+The default is the best setup found: a semantic state (named buckets, no numbers) with position
+statements as options. The numeric and hint variants are ablations (see flappy.md).
+
+usage: scripts/flappy.sh [--policy jev|oracle|rule|random|never] [--state semantic|numbers|words]
+                         [--style position|actions|goal|rule] [--episodes N] [--max-steps M]
+                         [--watch] [--model path.gguf]
+       scripts/flappy.sh --agree N   agreement on N balanced below/above-centre states
 """
 import argparse
 import random
@@ -179,7 +183,7 @@ def make_policy(name, args, rng):
     from .jev import Jev
     jev = Jev(args.model)
     opts = OPTIONS[args.options]
-    if args.style:
+    if args.state == "semantic":
         opts, args.noun, SUFFIX[0] = STYLES[args.style]
     if args.no_period:
         opts = [o.rstrip(".") for o in opts]
@@ -282,7 +286,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", choices=["jev", "oracle", "rule", "random", "never"], default="jev")
     ap.add_argument("--options", choices=list(OPTIONS), default="position")
-    ap.add_argument("--state", choices=["numbers", "words", "semantic"], default="numbers",
+    ap.add_argument("--state", choices=["numbers", "words", "semantic"], default="semantic",
                     help="how the state is described; words replaces the numbers with hints derived from the true state (ablation)")
     ap.add_argument("--drop", default="", help="prompt ablation: comma list of pos, goal, offset left out of the state text")
     ap.add_argument("--no-period", action="store_true", help="prompt ablation: options without the final period")
@@ -290,7 +294,7 @@ def main():
     ap.add_argument("--sample", type=float, default=0, metavar="T", help="sample the move at temperature T instead of argmax (0 = argmax)")
     ap.add_argument("--trace", type=int, default=10, help="decisions to show before each death")
     ap.add_argument("--flap-at", type=float, default=0.5, help="flap when p(flap) is at least this (default 0.5 = argmax)")
-    ap.add_argument("--style", choices=list(STYLES), help="with --state semantic: what the options say (position, actions, actions plus the rule)")
+    ap.add_argument("--style", choices=list(STYLES), default="position", help="what the options say; only with --state semantic, where it sets the options and the noun instead of --options and --noun (position, actions, goal, rule)")
     ap.add_argument("--noun", default="option", help="what the options are called in the prompt (option, statement, action)")
     ap.add_argument("--model", default="models/Qwen3.5-4B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)

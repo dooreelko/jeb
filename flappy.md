@@ -41,10 +41,10 @@ Semantic state, plain argmax:
 
 | options | reading, balanced acc at 0.5 | game score, mean |
 |---|---|---|
-| position statements | 0.99 | **28** (all six) |
+| position statements | 0.99 | **28** (all six); also 28 in all six on fresh seeds 2000-2005 |
 | actions, plain game description | 0.50 | 0 |
 | actions plus the explicit rule (leaks the policy) | 0.99 | 28 (all six) |
-| actions plus a goal line (fresh seeds 2000-2005, partial) | 0.50 | 0 (first two episodes) |
+| actions plus a goal line (fresh seeds 2000-2005) | 0.50 | 0 (all six die at step 34) |
 
 Numeric state, position statements:
 
@@ -64,8 +64,8 @@ The reading column is measured on 100 states balanced between "below" and "above
 
 ## Caveats
 
-- 6 episodes per row on one model, and the same seeds were used while choosing prompts. Fresh seeds
-  (2000-2005) are running for the winning style; not yet reported.
+- 6 episodes per row on one model. The winning style also scores 28 in all six on fresh seeds
+  (2000-2005) that were not used while choosing prompts; the other rows were not repeated on them.
 - Reading accuracy on balanced states predicted the game only loosely (balanced accuracy 0.76, 0.89, 0.90,
   0.96 gave 0, 2.33, 3.33, 8.33; AUROC did not track it). The states come from a noisy oracle's play, not
   from the model's own, so they under-represent the drifted states where it dies.
@@ -76,5 +76,5 @@ The reading column is measured on 100 states balanced between "below" and "above
 
 ## Untried
 
-Fresh-seed and coarser or shifted bucket edges as a robustness check, action repeat, few-shot examples,
+Coarser or shifted bucket edges as a robustness check, action repeat, few-shot examples,
 models beyond 9B.
