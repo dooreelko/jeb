@@ -51,3 +51,15 @@ Measured on 100 balanced states (below/above the gap centre), 4B, position wordi
 ## Write-up and reproducibility note
 - Summary of findings lives in flappy.md (linked from the README); this moth stays the decision record.
 - The 8.33 row was measured with an earlier, shortened state text (no position sentence, no goal sentence, no "with vertical velocity", options without the final period). The current code uses openjev's verbatim text, and that row is only approximately reproducible with the ablation flags; it has not been rerun in exactly that form. Treat it as a lead.
+
+
+## Direction change: semantic state (added after reading the Jev 1.13 docs)
+- The Jev 1.13 docs (docs.typesafe.ai/model-jaggedness/jev-1.13) say it does better on semantic than numeric representations ("pass in either the computed number or a named bucket"), that unrelated state acts as a distractor ("send only the fields the question needs"), that instructions should be direct, and that score calibration is weak so thresholds are the user's job. This overrides my earlier reading that the numbers were the right input. Decision: compute in code a bucketed state (where the bird is against the gap centre: far below ... far above, and vertical motion: rising fast ... falling fast), and send only that. No raw heights, pipe distance, physics or goal sentence.
+- Decision: prompts are iterated to make the system win the game first; threshold tuning and similar tricks come last, as fine-tuning. Prompts are scored at plain argmax. (A flap threshold of 0.6 on the numeric text lifted the mean from 3.33 to 22.00 on the test seeds, but that only patches a bad boundary and is not a prompt result; not pursued.) Sampling the move at temperature 0.5/1/2 scored 0 in every episode: the readout should stay a deterministic argmax.
+- Three option styles were compared on the same six seeds, 4B, argmax:
+  - position statements in the same words as the state bucket: 28 pipes in all six episodes, reading balanced accuracy 0.99;
+  - actions (flap / do nothing) with only a plain game description: 0 in all six (the model says flap almost always);
+  - actions plus an explicit rule line: 28 in all six, but this leaks the policy and is never a comparison result.
+- Reading of the result: the model executes a clearly stated comparison perfectly, and cannot infer the move from how the game works. The 28 mostly reflects the pre-digested state and my hand-written statement-to-move mapping; it is not evidence that the model decides the game, and it is no longer a like-for-like comparison with openjev, whose model reads raw numbers.
+- Death traces on the numeric text: every death was a near-tie flap (p 0.51-0.59) when the bird was already far above the gap and starting to fall; the model reacted to "falling" more than to position.
+- Next: a goal-level middle ground (a line saying the bird wants to stay level with the gap centre, in place of the rule) on fresh seeds, to test whether the model can decide rather than restate. Then robustness (other seeds, other bucket edges) and a rewrite of the README and flappy.md, which are outdated.

@@ -56,6 +56,7 @@ def centre(s):
     return (s["lo"] + s["hi"]) / 2
 
 
+TRACE = [10]
 DROP = set()  # parts of the state text to leave out, for the prompt ablation: pos, goal, offset
 
 
@@ -90,12 +91,46 @@ def words(s):
             f"The next pipe is {'close' if s['dx'] < 0.2 else 'far'}.{edge}")
 
 
+def offset_bucket(s):
+    """Where the bird is against the gap centre, as a name (computed in code, not left to the model)."""
+    d = s["y"] - centre(s)
+    for edge, name in ((-0.15, "far below"), (-0.05, "below"), (0, "slightly below"), (0.05, "slightly above"), (0.15, "above")):
+        if d < edge:
+            return name
+    return "far above"
+
+
+def motion_bucket(s):
+    v = s["vy"]
+    return ("rising fast" if v > 0.006 else "rising slowly" if v > 0.0015 else "hovering" if v > -0.0015
+            else "falling slowly" if v > -0.006 else "falling fast")
+
+
+SUFFIX = [""]  # context added after the semantic state, set by --style
+# what the options say, what they are called, and what the context adds
+STYLES = {
+    "position": (["The bird is below the centre of the gap", "The bird is above the centre of the gap"], "statement", ""),
+    "actions": (["Flap", "Do nothing"], "action", " Flapping pushes the bird up; otherwise it falls."),
+    "goal": (["Flap", "Do nothing"], "action", " Flapping pushes the bird up; otherwise it falls. "
+             "The bird wants to stay level with the centre of the gap."),
+    "rule": (["Flap", "Do nothing"], "action", " Flapping pushes the bird up; otherwise it falls. "
+             "Rule: flap when the bird is below the centre of the gap, otherwise do nothing."),
+}
+
+
+def semantic(s):
+    """Only the fields the decision needs, as named buckets and no numbers."""
+    return f"Flappy Bird. The bird is {offset_bucket(s)} the centre of the gap and is {motion_bucket(s)}.{SUFFIX[0]}"
+
+
 def describe(s, mode="numbers"):
     """The game state in words. numbers: heights and velocity; words: hints only (ablation)."""
     if mode == "numbers":
         return numbers(s)
     if mode == "words":
         return words(s)
+    if mode == "semantic":
+        return semantic(s)
     raise ValueError(mode)
 
 
@@ -144,12 +179,17 @@ def make_policy(name, args, rng):
     from .jev import Jev
     jev = Jev(args.model)
     opts = OPTIONS[args.options]
+    if args.style:
+        opts, args.noun, SUFFIX[0] = STYLES[args.style]
     if args.no_period:
         opts = [o.rstrip(".") for o in opts]
-    thr = [0.5]
+    thr = [args.flap_at]
 
     def policy(s):
         p = jev.probabilities(describe(s, args.state), opts, noun=args.noun)
+        if args.sample:  # sample the move from the softmax at this temperature instead of taking the argmax
+            d = np.log(max(p[0], 1e-9) / max(p[1], 1e-9)) / args.sample
+            return bool(rng.random() < 1 / (1 + np.exp(-d))), p
         return bool(p[0] >= thr[0]), p
     if args.threshold:  # fitted on states from other episodes than the ones played, then frozen
         pf, ps = agreement(policy, 100, base=50000)
@@ -162,6 +202,7 @@ def make_policy(name, args, rng):
 def play(seed, policy, max_steps, watch=False, delay=0.05):
     env, lat = Flappy(seed, max_steps), []
     on_flap = []  # actions taken while the bird is below the gap centre
+    tail = []  # (tick, height minus centre, vy, p(flap), flapped) for the trace before death
     ticks = []  # (bird height minus gap centre, flapped) for the error analysis
     while not env.done:
         s = env.state()
@@ -169,6 +210,7 @@ def play(seed, policy, max_steps, watch=False, delay=0.05):
         flap, probs = policy(s)
         lat.append(time.perf_counter() - t)
         ticks.append((s["y"] - centre(s), bool(flap)))
+        tail.append((env.t, s["y"] - centre(s), s["vy"], float(probs[0]), bool(flap)))
         if below_centre(s):
             on_flap.append(flap)
         if watch:
@@ -179,7 +221,7 @@ def play(seed, policy, max_steps, watch=False, delay=0.05):
         print("\033[H\033[J" + draw(env), f"\n\nGAME OVER  score {env.score}", flush=True)
     return {"score": env.score, "steps": env.t, "lat_ms": 1000 * float(np.mean(lat)),
             "flap_recall": float(np.mean(on_flap)) if on_flap else float("nan"), "n_flap": len(on_flap),
-            "ticks": ticks, "death": (env.y, env.state()["dx"], ticks[-1][0])}
+            "ticks": ticks, "tail": tail, "death": (env.y, env.state()["dx"], ticks[-1][0])}
 
 
 def agreement(policy, n, seed=0, noise=0.15, base=1000):
@@ -227,6 +269,11 @@ def report_errors(res, edges=(-1, -0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2, 1)):
         if m.any():
             print(f"  [{lo:+.2f}, {hi:+.2f})  n={m.sum():4d}  wrong {wrong[m].mean():.2f}")
     print(f"  overall wrong {wrong.mean():.3f} over {len(d)} decisions")
+    for i, r in enumerate(res):
+        if r["steps"] < 900:
+            print(f"episode {i} last decisions (tick, height-centre, vy, p(flap), flapped):")
+            for tk, dv, vy, pf, fl in r["tail"][-TRACE[0]:]:
+                print(f"  {tk:4d}  {dv:+.3f}  {vy:+.3f}  {pf:.2f}  {'FLAP' if fl else '-'}")
     print("deaths (height, distance to pipe, height minus centre): "
           + "; ".join(f"({r['death'][0]:.2f}, {r['death'][1]:+.2f}, {r['death'][2]:+.2f})" for r in res if r["steps"] < 900))
 
@@ -235,11 +282,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", choices=["jev", "oracle", "rule", "random", "never"], default="jev")
     ap.add_argument("--options", choices=list(OPTIONS), default="position")
-    ap.add_argument("--state", choices=["numbers", "words"], default="numbers",
+    ap.add_argument("--state", choices=["numbers", "words", "semantic"], default="numbers",
                     help="how the state is described; words replaces the numbers with hints derived from the true state (ablation)")
     ap.add_argument("--drop", default="", help="prompt ablation: comma list of pos, goal, offset left out of the state text")
     ap.add_argument("--no-period", action="store_true", help="prompt ablation: options without the final period")
     ap.add_argument("--threshold", action="store_true", help="fit the flap threshold on separate states (calibrated row)")
+    ap.add_argument("--sample", type=float, default=0, metavar="T", help="sample the move at temperature T instead of argmax (0 = argmax)")
+    ap.add_argument("--trace", type=int, default=10, help="decisions to show before each death")
+    ap.add_argument("--flap-at", type=float, default=0.5, help="flap when p(flap) is at least this (default 0.5 = argmax)")
+    ap.add_argument("--style", choices=list(STYLES), help="with --state semantic: what the options say (position, actions, actions plus the rule)")
     ap.add_argument("--noun", default="option", help="what the options are called in the prompt (option, statement, action)")
     ap.add_argument("--model", default="models/Qwen3.5-4B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
@@ -249,6 +300,7 @@ def main():
     ap.add_argument("--delay", type=float, default=0.05)
     ap.add_argument("--agree", type=int, default=0, metavar="N", help="agreement with the oracle on N states instead of playing")
     args = ap.parse_args()
+    TRACE[0] = args.trace
     DROP.update(x for x in args.drop.split(",") if x)
     policy = make_policy(args.policy, args, random.Random(args.seed))
 
