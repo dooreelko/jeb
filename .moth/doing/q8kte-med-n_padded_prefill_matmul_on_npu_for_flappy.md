@@ -323,3 +323,70 @@ found and fixed. Remaining noise (a handful of SOFT_MAX/SSM_CONV failures per ep
 expected: those are genuinely different shapes each frame as game context grows, not repeats, so
 negative caching correctly doesn't suppress them -- they're isolated one-offs already, not a
 performance problem.
+
+
+Closing decision: NPU integration is a dead end for now, parked until llama.cpp has full/proper
+NPU support -- not resumed unless that changes.
+
+Final performance investigation that led to this: the user reported "abysmal" NPU performance vs
+plain Flappy's GPU path (45.9s vs 1.98s for the same 5-step episode). Root cause: the NPU-enabled
+llama.cpp checkout had no GPU backend compiled in at all (GGML_HIP/GGML_CUDA/GGML_VULKAN all
+OFF, only GGML_HSA=ON) -- so "NPU-enabled" actually meant "CPU handles everything except the
+occasional MUL_MAT that reaches the NPU," compared against a baseline that offloads every op to a
+real GPU. Not a fair comparison, and not really about NPU dispatch efficiency at all.
+
+Rebuilt with both GGML_HIP=ON and GGML_HSA=ON to get a fair comparison. Result: performance
+matched the GPU baseline exactly (2.4s) -- but only because the NPU became entirely unused
+(`HSA0 compute buffer size is 0.0000 MiB`, confirmed via verbose model-load logging). llama.cpp's
+automatic backend selection (`llama_prepare_model_devices` / weight buffer-type selection)
+unconditionally prefers a real GPU-type device over an ACCEL-type device for weight placement
+whenever both are present -- this is a device-*type*-based decision, not something a kernel swap
+(e.g. moth ed5rs's FLM idea) or any ggml-hsa-side fix could change. GPU and NPU cannot coexist
+automatically; only a real GPU-or-NPU choice is available out of the box.
+
+Explored whether targeted `tensor_buft_overrides` (forcing only MUL_MAT-only weight tensors onto
+ACCEL while leaving the rest on GPU's default path) could achieve real coexistence -- concluded
+untried and non-trivial (would need to confirm it avoids the separate genuine-primary-device
+scheduler abort found earlier in this issue, since it's a different, narrower application of
+device targeting than what triggered that abort). Also explored whether adopting 1bit-MONSTER's
+own standalone engine (not just its precompiled kernels) sidesteps the GPU-preference problem
+entirely, since it wouldn't go through llama.cpp's scheduler at all -- yes in principle, but
+Flappy's design (src/mc.py) needs raw per-token logits at specific label-token IDs via a direct
+in-process C API call, and 1bit-MONSTER's HTTP server does not implement real per-token logprobs
+(rest_handler.cpp always returns `logprobs: null`, tracked upstream as unimplemented) -- so this
+route would need embedding 1bit-MONSTER's engine in-process, not its HTTP API, and would need
+confirming support for Qwen3.5's specific hybrid linear-attention/SSM architecture. Neither path
+pursued further; both noted in ed5rs for a future pickup.
+
+Summary of the full investigation this issue covers, for anyone picking NPU work back up later:
+- N-padding and bf16 conversion work correctly on real hardware for isolated MUL_MAT calls
+  (Task 3, hardware-verified).
+- Getting the NPU genuinely exercised at all (not silently skipped) required fixing real,
+  durable bugs: a missing backend-registry entry, an embedded-Python-interpreter crash under any
+  real (non-standalone) consumer, several environment/toolchain wiring gaps (PEANO/aiecc/
+  xclbinutil/kernels-dir colocation), a host-buffer-type abort, and negative-caching of doomed
+  kernel compiles -- all fixed and committed to the standalone ../ggml repo (xrt-runtime branch),
+  independent of Flappy and reusable for any future NPU work.
+- A real numerical-correctness bug was found, narrowed hard (isolated repro with the exact real
+  weight/activation bytes computes correctly; only fails as part of a real multi-layer forward
+  pass; hw_context eviction and cross-backend scheduler hand-off both ruled out as the cause) but
+  never root-caused. Worked around by refusing N=1 (single-token/decode) dispatch, which is safe
+  for Flappy's prefill-only usage but leaves the bug unexplained and leaves decode/autoregressive
+  NPU use unavailable.
+- The "genuine primary device" integration route (forcing ACCEL via `model_params.devices`) was
+  found to be architecturally blocked by a strict scheduler buffer-affinity rule combined with
+  ggml-hsa's sparse op coverage -- not viable without either much broader op coverage in ggml-hsa
+  or an upstream ggml scheduler change.
+- The only route that actually works today (automatic `n_gpu_layers` offload, ACCEL as CPU's
+  opportunistic extra-buffer-type) only ever activates when no GPU is present, making it useless
+  on any machine with a usable GPU -- which is the practical case that matters.
+
+What ships from this issue: the bf16 model conversion (models/Qwen3.5-0.8B-bf16.gguf, harmless
+to keep), and every ../ggml fix listed above (real, durable, useful for any future NPU work
+regardless of this closure). scripts/flappy-npu.sh is removed (git rm) along with its
+now-orphaned shell.nix libuuid addition -- it never delivered a working NPU speedup, was never
+portable from a fresh clone anyway (depended on a manually-built external llama.cpp checkout with
+a hand-applied overlay), and would only mislead a future reader into thinking NPU accel is
+available when the practical answer, on a machine with a GPU, is that it structurally isn't
+without deeper llama.cpp/ggml changes this issue doesn't attempt. Flappy continues to use its
+existing GPU path (scripts/flappy.sh) unchanged.
