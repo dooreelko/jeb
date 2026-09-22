@@ -104,3 +104,27 @@ ladder was built to test, so flagging before spending more runs on it. Also wort
 checking whether the bias is doom-specific (3 actions, "action" noun) or shows up in
 flappy's framing too (2 options) — flappy's own history suggests a milder version of
 the same thing.
+
+---
+
+## Model size matters: 27B breaks the A-bias
+
+Same variant 1 (bucketed describe), --model models/Qwen3.8-27B-UD-Q4_K_M.gguf, 5
+episodes:
+
+```
+episode 0: kills 5  steps 105
+episode 1: kills 6  steps 102
+episode 2: kills 6  steps 126
+episode 3: kills 7  steps 136
+episode 4: kills 5  steps 120
+mean kills 5.80  (openjev baseline ~11)
+```
+
+All runs above used the 0.8B model (script default) and got 0 kills, stuck near
+"turn left" regardless of content. The 27B model gets 5.80 mean kills and survives
+longer (102-136 vs 66-82 decisions) — clearly reading the state, not just saturating
+on option A. So the letter-position bias diagnosed above is (at least largely) a
+small-model capability problem, not an inherent flaw in the single-pass letter-readout
+itself. Still ~half openjev's ~11, room to close with variant 2/3 (finer/raw state) on
+the 27B model, or the reasoning-pass idea (variant 4).
