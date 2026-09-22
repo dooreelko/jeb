@@ -6,7 +6,9 @@ compared with one flag.
 Same env, actions, readout (src/jev.py) and 4-tics-per-decision cadence as src/doom.py — only
 describe() changes between variants.
 
-usage: scripts/doom-experiments.sh --variant {1,2,3} [--episodes N] [--max-steps M] [--model path.gguf]
+usage: scripts/doom-experiments.sh --variant {1,2,3,4} [--episodes N] [--max-steps M] [--model path.gguf]
+       variant 4: a short free-text reasoning pass (see reason()) before the same letter readout,
+       on top of variant 1's describe().
 """
 import argparse
 
@@ -82,18 +84,28 @@ def describe_v3(state):
 
 DESCRIBE = {1: describe_v1, 2: describe_v2, 3: describe_v3}
 
+REASON_PROMPT = "In one short phrase, what should the player do right now and why?"
+
+
+def reason(jev, context, max_tokens=24):
+    """A short free-text plan before the letter readout (variant 4): one greedy generation,
+    capped small for speed. Not openjev's two-step (that's N classifier passes, no free text) —
+    this is the other two-step idea: think briefly, then read the same option-letter logits."""
+    prompt = jev.model.chat(f"{context}\n\n{REASON_PROMPT}")
+    return jev.model.generate(prompt, max_tokens=max_tokens).strip()
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", type=int, choices=list(DESCRIBE), required=True)
+    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4], required=True)
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=2100)
     ap.add_argument("--seed", type=int, default=1000)
-    ap.add_argument("--watch", action="store_true", help="print state each decision")
+    ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
     args = ap.parse_args()
-    describe = DESCRIBE[args.variant]
     jev = Jev(args.model)
+    describe = DESCRIBE.get(args.variant)  # None for variant 4, handled below
 
     kills = []
     for i in range(args.episodes):
@@ -101,12 +113,19 @@ def main():
         steps = 0
         while not game.is_episode_finished() and steps < args.max_steps:
             state = game.get_state()
-            choice = jev.probabilities(describe(state), ACTIONS, noun="action").argmax()
+            context = describe_v1(state)
+            shown = context
+            if args.variant == 4:
+                plan = reason(jev, context)
+                shown = f"{context} Plan: {plan}"
+            elif describe is not None:
+                shown = describe(state)
+            choice = jev.probabilities(shown, ACTIONS, noun="action").argmax()
             action = [b == BUTTONS[choice] for b in BUTTONS]
             game.make_action(action, TICS_PER_DECISION)
             steps += 1
             if args.watch:
-                print(f"step {steps}: {describe(state)} -> {ACTIONS[choice]}", flush=True)
+                print(f"step {steps}: {shown} -> {ACTIONS[choice]}", flush=True)
         k = int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
         kills.append(k)
         game.close()
