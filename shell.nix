@@ -49,5 +49,9 @@ in pkgs.mkShellNoCC {
 
     shellHook = ''
       export CMAKE_PREFIX_PATH="${pkgs.lib.makeSearchPath "" rocmDeps}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+      # libuuid.so.1: runtime dependency of the NPU-enabled llama.cpp build's XRT backend
+      # (scripts/flappy-npu.sh), for xclbin.h-derived symbols. Kept here (not hardcoded in the
+      # script) so it doesn't break on nix store GC / rebuilds.
+      export LD_LIBRARY_PATH="${pkgs.util-linux.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     '';
  }
