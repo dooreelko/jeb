@@ -34,8 +34,11 @@ def enemies(state):
     centre, size as fraction of screen height. Sorted by distance from the crosshair."""
     if state is None or state.labels is None:
         return []
+    # defend_the_center's labels buffer includes self (DoomPlayer/Marine*) and transient FX
+    # (Blood, BulletPuff) alongside the actual monsters; only the latter are threats.
+    not_a_threat = ("DoomPlayer", "Marine", "Blood", "BulletPuff")
     out = [(l.object_name, l.x / SCREEN_W + l.width / (2 * SCREEN_W) - 0.5, l.height / SCREEN_H)
-           for l in state.labels if not l.object_name.startswith(("DoomPlayer", "Marine"))]  # self, not a threat
+           for l in state.labels if not l.object_name.startswith(not_a_threat)]
     return sorted(out, key=lambda e: abs(e[1]))
 
 
