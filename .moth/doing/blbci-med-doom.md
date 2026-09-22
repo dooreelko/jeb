@@ -128,3 +128,14 @@ on option A. So the letter-position bias diagnosed above is (at least largely) a
 small-model capability problem, not an inherent flaw in the single-pass letter-readout
 itself. Still ~half openjev's ~11, room to close with variant 2/3 (finer/raw state) on
 the 27B model, or the reasoning-pass idea (variant 4).
+
+---
+
+## Considered and dropped: quantizing openjev's own model
+
+openjev is not a causal LM: a Qwen3.5 backbone plus a separate trained NLI
+classification head (custom modeling_openjev.py, mlp_heads_35b/), scored by
+premise/hypothesis entailment via OpenJevCrossEncoder.rerank(), not next-token
+logits. GGUF/llama.cpp targets causal LMs; converting would drop the trained head
+and jev.py's letter-readout has nothing to read from a cross-encoder anyway. Not
+worth the mismatch — dropped in favor of pushing the 27B result further.
