@@ -24,16 +24,14 @@ Design decisions from brainstorming:
 - N-padding: lives in ggml-hsa's shared tensor-extra logic (ggml-hsa.cpp), same place as the
   existing XRT-only f32->bf16 src1 conversion — not XRT-runtime-only, so it benefits any future
   runtime.
-- llama-cpp-python integration (spiked and confirmed): this project's Flappy runs on
-  llama-cpp-python, whose --no-binary build compiles its own vendored llama.cpp/ggml copy — not
-  ../ggml directly. ggml-hsa's footprint outside its own directory is tiny (one CMakeLists option
-  line, one ggml_add_backend(HSA) line), so a small scripted overlay (clone llama-cpp-python at
-  the pinned version + its vendored llama.cpp submodule, copy in src/ggml-hsa/ from ../ggml
-  xrt-runtime, patch those two lines, pip install from that local checkout with
-  GGML_HSA=ON/GGML_HSA_RUNTIME=XRT) is sufficient. Confirmed by spike: CMake configure reaches
-  "Including HSA backend" cleanly with XRT paths accepted. No fork to maintain, no changes needed
-  to src/jev.py or src/common.py — same integration shape as the existing HIP build path
-  (scripts/build-llama.sh), just a different source overlay and CMAKE_ARGS.
-
+- llama-cpp-python integration, corrected during plan-writing: llama_cpp.py honors a
+  LLAMA_CPP_LIB_PATH env var to load a prebuilt libllama.so directly -- no pip rebuild/overlay
+  needed (supersedes an earlier spike of a pip-sdist-overlay approach, which worked but was
+  unnecessarily heavy). /home/doo/projects/llama.cpp is a plain upstream checkout that already
+  carries an uncommitted ggml-hsa overlay from earlier HSA/ROCR-era work (built once with
+  GGML_HSA=ON, not XRT) -- refresh that overlay to ../ggml's xrt-runtime branch, fast-forward
+  the checkout to current upstream first (it's an old pull), rebuild with GGML_HSA_RUNTIME=XRT,
+  and point Flappy at the build via a new scripts/flappy-npu.sh wrapper setting
+  LLAMA_CPP_LIB_PATH/LD_LIBRARY_PATH. No changes to src/jev.py or src/common.py.
 
 Full technical design: docs/superpowers/specs/2026-09-22-npu-flappy-bf16-padding-design.md
