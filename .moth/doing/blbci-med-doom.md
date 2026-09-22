@@ -73,3 +73,34 @@ enemies() (didn't change the result, bias dominates regardless).
 Next: variant 2/3 (finer buckets / raw numeric state) to see if the position bias is a
 property of the bucketed wording specifically, or of the single-pass letter-readout
 itself regardless of how the state is described.
+
+---
+
+## Variants 2 and 3: same bias, not the wording
+
+Ran both full (5 episodes, seed 1000+i, max-steps 2100):
+
+```
+variant 2 (finer buckets):  steps 73 66 82 81 66  kills 0 0 0 0 0
+variant 3 (raw numeric):    steps 73 66 82 81 66  kills 0 0 0 0 0
+```
+
+Identical to variant 1, episode-length to the tic, across all three. Checked raw
+probabilities directly on variant 3 (plain numeric offsets/sizes, no words at all):
+"turn left" still ~0.60-0.64, "attack" never above ~0.13, essentially unmoved by
+what is actually in the prompt (enemy present or not, offset value, nothing changes
+the ranking).
+
+**Diagnosis**: this is not a state-description problem. The 3-option single-pass
+letter-readout (src/jev.py) is strongly biased toward option A ("turn left", listed
+first) for this action-choice framing, close to independent of content. Changing
+describe() — the whole premise of variants 1-3 — cannot fix a bias that lives in the
+readout/prompt-framing for actions, not in how the scene is described.
+
+**Ladder paused here.** Variant 4 (reasoning pass before the readout) was the planned
+next step if a *content* variant degraded; it might still be worth trying since a
+free-text pass could break the A-bias, but that is a different hypothesis than the
+ladder was built to test, so flagging before spending more runs on it. Also worth
+checking whether the bias is doom-specific (3 actions, "action" noun) or shows up in
+flappy's framing too (2 options) — flappy's own history suggests a milder version of
+the same thing.
