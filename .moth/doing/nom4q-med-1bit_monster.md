@@ -145,3 +145,25 @@ Final whole-branch review pending before considering this ready to merge/present
 ## Final review (2026-09-22)
 
 Whole-branch review clean after one fix wave. Fixed: a device-run failure detected only at the trailing flush of a graph did not surface as GGML_STATUS_FAILED (silently stale destination data) — added `ggml_hsa_rt_failed()` to the runtime interface, checked after the trailing flush and mid-dispatch. Plus minor polish (test linkage, zero-size alloc parity, dead code comments). Branch: ../ggml `xrt-runtime` (base hsa-backend @ 4c5c8fc), head 9d808fb, 20 commits. Not merged, not pushed.
+
+
+## Closing (2026-09-22)
+
+Extended further during q8kte (bf16 Flappy + N-padded NPU matmul, done): the XRT runtime got
+several more real, hardware-verified fixes and additions on top of the head noted above --
+a backend-registry gap found in a downstream llama.cpp checkout using this branch, a crash in
+the embedded Python interpreter under any real (non-standalone) consumer, environment/toolchain
+documentation, two new hardware stress tests (multi-kernel hw_context eviction, cross-backend
+scheduler interleave), a host-buffer-type abort fix, a negative cache for doomed kernel compiles,
+and a correctness gate refusing single-token (N=1) MUL_MAT dispatch (a real, narrowed-but-
+unexplained numerical bug found during q8kte). Branch head is now b47e268, still on ../ggml
+`xrt-runtime` (base hsa-backend @ 4c5c8fc).
+
+Marking this done on its own terms: the goal here was building custom llama.cpp NPU support via
+ggml-hsa's XRT runtime, and that was achieved and hardware-validated (correct MUL_MAT results,
+real speedup over CPU for large tile-aligned shapes). q8kte's later finding that NPU can't
+coexist with a GPU backend in the same llama.cpp process is a separate, downstream integration
+concern (see q8kte's closure) -- it doesn't undo what this task set out to do and accomplished.
+
+../ggml `origin` is ypapadop-amd/ggml, not a remote this project controls -- `xrt-runtime` stays
+a local-only branch there by design; nothing pushed or merged upstream as part of closing this.
