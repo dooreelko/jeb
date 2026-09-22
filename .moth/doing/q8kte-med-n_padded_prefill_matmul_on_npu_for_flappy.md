@@ -300,3 +300,26 @@ harmless (correct CPU fallback) but exactly what read as "throws a bunch of erro
 outside. Not fixed here (real fix is a negative-cache or an op-support allowlist in ggml-hsa
 itself, upstream of this project); noting it as a known cosmetic issue, not reopening
 investigation into it unless asked.
+
+
+Fixed the "wall of errors" noise flagged as a known cosmetic issue in the previous update, after
+the user pasted a specific repeated traceback: `AssertionError: A must be tileable into
+(m * n_aie_rows, k)-sized blocks`. Traced it to a genuinely tiny, permanently-uncompileable
+MUL_MAT (K=1024, M=16 -- M isn't and can never become a multiple of 64, the aie2p tiling
+requirement), hit hundreds of times per game episode because ggml-hsa never cached a failed
+compile: every dispatch that reached this shape retried the whole slow compile-subprocess/
+exception pipeline from scratch, whether or not it had already failed identically many times
+before.
+
+Fixed with a negative cache (committed b47e268, ../ggml): a per-device `failed_kernel_names` set
+alongside the existing kernel cache, checked before attempting a compile. Verified against
+Flappy end-to-end: 2467 -> 77 log lines for the same episode/step count; the specific
+repeat-offender reduced from hundreds of occurrences to one. This is a real, durable fix (not
+Flappy-specific), independent of the N=1 correctness gate from the previous update.
+
+Status: the "throws a bunch of errors, doesn't seem to use the NPU at all" report is now fully
+addressed -- both causes (flappy-npu.sh missing PEANO/model wiring, and this negative-cache gap)
+found and fixed. Remaining noise (a handful of SOFT_MAX/SSM_CONV failures per episode) is
+expected: those are genuinely different shapes each frame as game context grows, not repeats, so
+negative caching correctly doesn't suppress them -- they're isolated one-offs already, not a
+performance problem.
