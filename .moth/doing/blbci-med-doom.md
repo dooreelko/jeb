@@ -139,3 +139,29 @@ premise/hypothesis entailment via OpenJevCrossEncoder.rerank(), not next-token
 logits. GGUF/llama.cpp targets causal LMs; converting would drop the trained head
 and jev.py's letter-readout has nothing to read from a cross-encoder anyway. Not
 worth the mismatch — dropped in favor of pushing the 27B result further.
+
+---
+
+## Variant 4 result: reasoning pass helps neither model
+
+5 episodes each, seed 1000+i, max-steps 2100:
+
+```
+0.8B: kills 0 0 0 0 0  steps 73 66 82 81 66   mean 0.00
+27B:  kills 5 6 6 5 5   steps 105 102 126 118 120  mean 5.40
+```
+
+0.8B: identical to variants 1/2/3, step for step. Its own generated reasoning read
+reasonably ("aim at the Demon and fire 26 rounds") but the letter-readout ignored it
+and still picked "turn left" — confirms the small-model readout bias overrides
+whatever free text precedes it, own words included.
+
+27B: 5.40 vs 5.80 for variant 1 (no reasoning) — no improvement, roughly noise, plus
+an extra generation call every decision (slower). The 27B model already reads state
+fine without a reasoning step; adding one doesn't help it and costs latency.
+
+**Ladder conclusion so far**: none of describe()-wording (v1-3) or a reasoning pass
+(v4) move the needle — what matters is model size (0.8B: stuck at 0; 27B: 5.40-5.80,
+still ~half openjev's ~11). Next real lever is probably closing that remaining gap on
+the 27B model itself (variant 2/3 there, or something else), not more readout
+scaffolding on top of it.
