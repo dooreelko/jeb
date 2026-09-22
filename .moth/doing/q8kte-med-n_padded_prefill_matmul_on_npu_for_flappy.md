@@ -234,3 +234,42 @@ Net position on this issue: the garbled-output bug on the actual-production (opp
 remains open and is narrowed to a dispatch-history-dependent NPU-context/BO-cache interaction
 (previous update); the genuine-device path is understood but not viable without a much bigger
 scope of work, so it's set aside rather than pursued further here.
+
+
+Correction to the previous update's "dispatch-history-dependent NPU-context/BO-cache interaction"
+hypothesis: tested directly by bumping k_max_live_contexts (runtime-xrt.cpp) from 4 to 12 -- a
+real forward pass only needs 11 distinct kernel shapes, so this removes essentially all hw_context
+eviction/churn. The bug was completely unchanged (byte-identical wrong output). This rules out
+hw_context/BO-cache churn as the cause too, on top of the eviction and cross-backend-hand-off
+tests already ruled out. What actually distinguishes the failing case from every isolated-correct
+test remains unidentified -- narrowed to "real N=1, inside a real 1405-node forward pass" with no
+further explanation. (Parameter reverted back to 4 after the experiment.)
+
+Decision, given the above and given Flappy's own scope (one prefill pass per game step, no
+decode loop -- this bug only affects single-token/N=1 dispatch, which Flappy's own prompts never
+produce): rather than keep chasing an unexplained bug with diminishing evidence of what's even
+different about the failing case, gated it off directly. `ggml_backend_hsa_device_supports_op`
+now refuses any MUL_MAT with real activation-batch N == 1, falling back to CPU instead of
+silently returning wrong data (committed 554c48b). Verified against a real Qwen3.5-0.8B
+single-token generation step: before, NPU-enabled generation produced a garbled token; after, it
+exactly matches the CPU-only baseline. N-padded batches of 2+ tokens (this backend's actual
+validated use case, and Flappy's real usage) are unaffected -- confirmed xrt-mul-mat's N=512 case
+still dispatches to hardware correctly (1.1ms, exact match).
+
+This unblocks q8kte's actual goal (Flappy) without the correctness bug being explained. It leaves
+autoregressive decode (any future NPU use case that generates token-by-token, N=1 each step)
+unable to use the NPU at all -- filed as separate speculative future work, moth ed5rs: bypass
+ggml-hsa's own IRON-JIT kernel-compilation path and wrap 1bit-MONSTER's precompiled FastFlowLM
+(FLM) kernels for MUL_MAT instead, removing both the correctness risk and the embedded-Python-
+interpreter/PEANO/aiecc/xclbinutil toolchain dependency from the runtime path. Not started, not
+committed to -- a documented option, not a plan.
+
+Status of this issue: NPU-backed bf16 Flappy inference is now believed safe to use (prefill-only,
+N>=2, hardware-validated end-to-end for real model shapes, garbled-output bug worked around for
+the one input shape it affected). Remaining before calling this fully done: wire Flappy's actual
+model-loading code (scripts/flappy-npu.sh / src/common.py path) to the working
+devices/tensor_buft_overrides-free opportunistic path confirmed working this session (automatic
+n_gpu_layers=-1 offload is sufficient -- no ctypes workaround needed, since that workaround was
+for the genuine-primary-device path which is a dead end, not the opportunistic path Flappy
+actually needs), and re-run Flappy end-to-end to confirm real gameplay-quality output, not just a
+single isolated generation step.
