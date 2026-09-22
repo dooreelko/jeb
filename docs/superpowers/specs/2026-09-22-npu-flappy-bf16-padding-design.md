@@ -43,44 +43,38 @@ ancestor. No new model is downloaded. Flappy's `--model` default in `src/flappy.
 to the new path only after validation (Section 4) confirms the NPU path is actually
 exercised and scores stay consistent.
 
-### 2. Build integration: llama-cpp-python overlay
+### 2. Build integration: prebuilt libllama.so via LLAMA_CPP_LIB_PATH
 
-Flappy runs on `llama-cpp-python` (via `src/jev.py` → `src/common.py`'s `Model`), which is
-built by `scripts/build-llama.sh` today via `pip install --no-binary llama-cpp-python`
-against **`llama-cpp-python`'s own vendored `llama.cpp`/`ggml` copy** — not `../ggml`
-directly. Confirmed by spike: `ggml-hsa`'s footprint outside its own source directory is two
-lines (`option(GGML_HSA ...)` in `ggml/CMakeLists.txt`, `ggml_add_backend(HSA)` in
-`ggml/src/CMakeLists.txt`), so overlaying it onto the vendored copy is sufficient — no fork
-to maintain, no change to `src/jev.py`/`src/common.py`.
+Flappy runs on `llama-cpp-python` (via `src/jev.py` → `src/common.py`'s `Model`), which
+loads its native libraries through ctypes. Its loader (`llama_cpp/_ctypes_extensions.py`,
+used from `llama_cpp/llama_cpp.py`) honors an `LLAMA_CPP_LIB_PATH` environment variable that
+points it at a directory containing a prebuilt `libllama.so` (and its sibling
+`libggml*.so`s) instead of the package's own bundled copy — no pip rebuild, no vendoring
+`llama-cpp-python` at all. This supersedes the pip-sdist-overlay approach explored in an
+earlier spike (confirmed to configure, but unnecessarily heavy next to this).
 
-New script `scripts/build-llama-npu.sh`, same shape as `build-llama.sh`:
+`/home/doo/projects/llama.cpp` is a plain upstream `llama.cpp` checkout (`origin/master`, no
+fork) that already carries an uncommitted overlay of `ggml-hsa` (`ggml/src/ggml-hsa/` plus
+the same two `CMakeLists.txt` lines from Section above) from earlier HSA/ROCR-era work, built
+once with `GGML_HSA=ON` but not XRT. Refresh that overlay from `../ggml`'s `xrt-runtime`
+branch and rebuild:
 
-1. Clone `llama-cpp-python` at the pinned tag matching the project's current version
-   (`0.3.35`) plus its `vendor/llama.cpp` submodule into a scratch dir (git-ignored, under
-   e.g. `.build/llama-cpp-python-npu/`, recreated each run — same disposability as the
-   existing pip `--no-cache` rebuild).
-2. Copy `../ggml`'s `src/ggml-hsa/` (from the `xrt-runtime` branch) into the scratch dir's
-   `vendor/llama.cpp/ggml/src/ggml-hsa/`, overwriting any prior copy.
-3. Patch the two CMakeLists lines (option + `ggml_add_backend(HSA)`) into
-   `vendor/llama.cpp/ggml/CMakeLists.txt` and `vendor/llama.cpp/ggml/src/CMakeLists.txt` if
-   not already present (idempotent — `grep -q` guard before appending).
-4. `pip install --python .venv/bin/python --reinstall --no-cache --no-binary
-   llama-cpp-python <scratch-dir>` with:
-   ```
-   CMAKE_ARGS="-DGGML_HSA=ON -DGGML_HSA_RUNTIME=XRT \
-               -DXRT_INCLUDE_DIR=<xrt include path> \
-               -DXRT_LIBRARIES=<xrt libs> \
-               -DCMAKE_BUILD_TYPE=Release"
-   ```
-   XRT paths are host-specific (this host's are under
-   `1bit-MONSTER/.local/xrt` and `/usr/lib/x86_64-linux-gnu`); the script resolves them the
-   same defensive way `ggml-hsa`'s own kernel build script resolves `aiecc`/`xclbinutil`
-   (explicit path checks, hard-fail with a clear message if not found), rather than
-   hardcoding this machine's paths.
+1. Replace `ggml/src/ggml-hsa/` in the `llama.cpp` checkout with `../ggml`'s `src/ggml-hsa/`
+   (from `xrt-runtime`); reconcile the two `CMakeLists.txt` lines if upstream `llama.cpp` has
+   moved past what the existing overlay patched (diff against the current overlay's own
+   patch to `ggml/CMakeLists.txt` / `ggml/src/CMakeLists.txt` first).
+2. Reconfigure and rebuild `build/` with `-DGGML_HSA=ON -DGGML_HSA_RUNTIME=XRT
+   -DXRT_INCLUDE_DIR=<xrt include path> -DXRT_LIBRARIES=<xrt libs> -DCMAKE_BUILD_TYPE=Release`
+   (XRT paths resolved defensively, not hardcoded, same as `ggml-hsa`'s kernel build script
+   resolves `aiecc`/`xclbinutil`).
+3. New script `scripts/flappy-npu.sh`, a thin wrapper: `export LLAMA_CPP_LIB_PATH=<build
+   dir>/bin`, `export LD_LIBRARY_PATH=<build dir>/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}`
+   (needed because sibling `.so` resolution wasn't observed to work automatically on this
+   host — confirmed by hand when running the checkout's `llama-quantize`), then
+   `exec scripts/flappy.sh "$@"`. `scripts/flappy.sh` itself is untouched.
 
-This leaves the existing `build-llama.sh` (HIP/ROCm) untouched; the two backends are
-mutually exclusive builds selected by which script the user runs, matching how the project
-already treats CPU vs HIP builds as separate `scripts/build-llama*.sh` entry points.
+This leaves the existing `build-llama.sh` (HIP/ROCm, pip-installed) untouched; switching
+between backends is just which script launches Flappy.
 
 ### 3. N-padding (shared tensor-extra logic in `ggml-hsa.cpp`)
 
