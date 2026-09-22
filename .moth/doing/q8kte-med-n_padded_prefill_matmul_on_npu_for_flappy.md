@@ -273,3 +273,30 @@ n_gpu_layers=-1 offload is sufficient -- no ctypes workaround needed, since that
 for the genuine-primary-device path which is a dead end, not the opportunistic path Flappy
 actually needs), and re-run Flappy end-to-end to confirm real gameplay-quality output, not just a
 single isolated generation step.
+
+
+Wired Flappy's actual invocation to the working path (the "remaining" item from the previous
+update) after the user reported `scripts/flappy-npu.sh` throwing errors and not using the NPU at
+all. Two real, separate blockers found and fixed (committed 74343a7):
+
+1. Missing `PEANO_INSTALL_DIR` / `opt`+`aiecc` on `PATH`. The kernel JIT compiler attaches to
+   flappy.sh's own Python interpreter (`.venv/bin/python`) and couldn't find `opt`, so every
+   kernel compile failed for every op and everything silently fell back to CPU. This exact
+   requirement was documented in ../ggml's README this session but never applied to this
+   project's own launch script -- a real gap in "durable reuse," caught by actually using it.
+2. Flappy's own `--model` default is still the Q4_K_M quantized model (src/flappy.py); the NPU
+   GEMM kernel needs bf16 weights. `flappy-npu.sh` now defaults to
+   `models/Qwen3.5-0.8B-bf16.gguf` unless the caller passes `--model` explicitly.
+
+Verified real dispatch is now happening (not a silent CPU-only fallback): new `mul_mat-*.xclbin`
+cache entries appeared for Flappy's own model's actual shapes after a run, e.g.
+`mul_mat-1024x512f32-2048x1024bf16-2048x512bf16`.
+
+Separate, noisier-but-not-fatal issue observed while verifying this: `ggml_backend_hsa_device_
+supports_op` re-attempts kernel compilation for every genuinely-unsupported op (SOFT_MAX with
+certain shapes, SSM_CONV, GET_ROWS, ...) on every single dispatch that reaches it, since a failed
+compile is never negative-cached -- hundreds of Python tracebacks per short game episode, all
+harmless (correct CPU fallback) but exactly what read as "throws a bunch of errors" from the
+outside. Not fixed here (real fix is a negative-cache or an op-support allowlist in ggml-hsa
+itself, upstream of this project); noting it as a known cosmetic issue, not reopening
+investigation into it unless asked.
