@@ -126,3 +126,39 @@ letter). That adds an answer-to-letter mapping step, which is where 0.8B broke i
 1-4. Variant 6 asks a plain yes/no question and reads the yes/no tokens directly (on 0.8B,
 yes/Yes/no/No carry ~99% of the probability at that position). Wording ("right move" vs
 "best move", which is comparative) is tested as a separate variable, not in the same run.
+
+## Variant 6 result (0.8B, 20 episodes): rejected
+
+| config | mean kills | attack share |
+|---|---|---|
+| always-attack | 1.50 | 100% |
+| variant 5 (yes/no through A/B letters) | 2.30 | ~87% |
+| variant 6, "right move" (yes/no tokens) | 1.65 | 95% |
+| variant 6, "best move" | 1.45 | 96% |
+
+Reading the yes/no tokens directly gives "attack" an even larger built-in "yes" than the
+letter form, so it collapses towards always-attack, and wrong-direction turns reappear.
+The hypothesis that the letter scaffold adds noise is refuted at 0.8B: for per-action
+yes/no, the multiple-choice letter form is the better readout. "Best" (comparative) was
+no better than "right". Variant 5 stays the per-action baseline.
+
+## Decision: prompts must not contain the decision
+
+The goal of this task, made explicit: the prompt describes the scene, the model makes the
+decision. Working definition: only raw observables of each object in the scene's own
+frame; no relation, comparison or bucket computed in code.
+
+- Decision-bearing: "Demon left of the crosshair", "offset -0.3 from the crosshair",
+  flappy's "slightly below the gap centre" or "+0.02 relative to the centre".
+- Decision-free: "Demon at screen x 0.21, crosshair at x 0.50"; "bird height 0.42, gap
+  from 0.30 to 0.58".
+
+Consequence: variants 1, 2, 4, 5, 6 all used openjev's decision-bearing wording
+("left of" nearly says "turn left", "exactly on" nearly says "attack"), so variant 5's
+direction-consistent turns may be word-matching rather than scene reading. Variant 3 is
+in between (offset relative to the crosshair). Results so far are about readouts, not
+about decision-free play.
+
+Next: variant 5 readout on a strictly decision-free doom description; and in flappy, a
+cheap agreement/AUROC check of letter vs yes/no readouts on openjev's numeric state with
+the decision lines dropped.
