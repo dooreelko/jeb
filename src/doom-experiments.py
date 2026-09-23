@@ -6,15 +6,17 @@ compared with one flag.
 Same env, actions, readout (src/jev.py) and 4-tics-per-decision cadence as src/doom.py — only
 describe() changes between variants.
 
-usage: scripts/doom-experiments.sh --variant {1,2,3,4,5} [--episodes N] [--max-steps M] [--model path.gguf]
+usage: scripts/doom-experiments.sh --variant {1,2,3,4,5,6} [--episodes N] [--max-steps M] [--model path.gguf]
        variant 4: a short free-text reasoning pass (see reason()) before the same letter readout,
        on top of variant 1's describe(). variant 5: one independent yes/no judgment per action
-       (see per_action()), highest p(yes) wins.
+       (see per_action()), highest p(yes) wins. variant 6: the same without the letter scaffold,
+       plain yes/no tokens (see direct_yes()); --question right|best.
 """
 import argparse
 import random
 
 import vizdoom as vzd
+from scipy.special import softmax
 
 from .doom import ACTIONS, BUTTONS, SCREEN_H, SCREEN_W, TICS_PER_DECISION, enemies, make_game
 from .jev import Jev
@@ -106,6 +108,23 @@ def per_action(jev, context):
                               noun="answer")[0] for a in ACTIONS]
 
 
+QUESTION = {"right": "right move right now", "best": "best move right now"}
+
+
+def direct_yes(jev, context, question="right"):
+    """Variant 6: variant 5's per-action judgment without the multiple-choice scaffold. Plain
+    yes/no question, p(yes) read straight from the yes/no tokens (both cases, which carry ~99% of
+    the mass at that position), no letters to map the answer onto."""
+    m = jev.model
+    yes, no = [m.tok(t) for t in ("yes", "Yes")], [m.tok(t) for t in ("no", "No")]
+    out = []
+    for a in ACTIONS:
+        logits = m.last_logits(m.chat(f'{context} Is "{a}" the {QUESTION[question]}?', system="Answer only yes or no."))
+        p = softmax(logits[yes + no])
+        out.append(float(p[:len(yes)].sum()))
+    return out
+
+
 def baseline_yes(jev, episodes=3, base=50000):
     """Each action's mean p(yes) over states from random play on separate seeds, frozen before
     the scored episodes: the flat "yes" prior per action, subtracted before the argmax (as flappy's
@@ -139,7 +158,8 @@ def run_control(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5])
+    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5, 6])
+    ap.add_argument("--question", choices=list(QUESTION), default="right", help="variant 6: ask for the right or the best move")
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=2100)
@@ -172,8 +192,8 @@ def main():
                 shown = f"{context} Plan: {plan}"
             elif describe is not None:
                 shown = describe(state)
-            if args.variant == 5:
-                p_yes = per_action(jev, context)
+            if args.variant in (5, 6):
+                p_yes = per_action(jev, context) if args.variant == 5 else direct_yes(jev, context, args.question)
                 choice = max(range(len(ACTIONS)), key=lambda j: p_yes[j] - offset[j])
                 shown = f"{context} p(yes) " + " ".join(f"{a}={p:.2f}" for a, p in zip(ACTIONS, p_yes))
             else:
