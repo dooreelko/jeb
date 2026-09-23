@@ -84,3 +84,23 @@ What limits it: a flat prior towards "yes" for attack (~0.6 even on an empty scr
 attacks ~87% of decisions and wastes ammo. Natural next step keeps the combiner dumb:
 remove each action's baseline "yes" level (measured on separate states, then frozen, as
 flappy's fitted threshold did) before the argmax. Also: more episodes for a firmer number.
+
+## Variant 5, 20 episodes (0.8B, same seeds)
+
+| config | mean kills |
+|---|---|
+| random | 1.30 |
+| always-attack | 1.50 |
+| variant 5 | 2.30 |
+| variant 5 + per-action baseline subtracted | 2.10 |
+
+Paired with always-attack on the same seeds, variant 5 is never worse in any episode
+(+0.8 mean, roughly 3 standard errors). The decomposition gain is real, if small.
+
+Calibration (subtract each action's mean p(yes) measured on separate random-play states)
+did not help: the fitted baselines are close together (turn left 0.57, turn right 0.54,
+attack 0.62), so the offset barely reorders choices; 2.10 vs 2.30 is noise. So the limit is
+not the flat prior but how weak the per-action "yes" signal is at 0.8B. Rejected as a fix.
+
+Controls (random, always-attack) are now part of the experiments entry point so the
+comparison is reproducible.

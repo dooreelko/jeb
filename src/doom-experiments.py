@@ -12,6 +12,7 @@ usage: scripts/doom-experiments.sh --variant {1,2,3,4,5} [--episodes N] [--max-s
        (see per_action()), highest p(yes) wins.
 """
 import argparse
+import random
 
 import vizdoom as vzd
 
@@ -105,16 +106,57 @@ def per_action(jev, context):
                               noun="answer")[0] for a in ACTIONS]
 
 
+def baseline_yes(jev, episodes=3, base=50000):
+    """Each action's mean p(yes) over states from random play on separate seeds, frozen before
+    the scored episodes: the flat "yes" prior per action, subtracted before the argmax (as flappy's
+    fitted threshold was). Keeps the combiner dumb: no rule, just a per-action offset."""
+    rng, total, n = random.Random(base), [0.0] * len(ACTIONS), 0
+    for i in range(episodes):
+        game = make_game(base + i)
+        while not game.is_episode_finished():
+            for j, p in enumerate(per_action(jev, describe_v1(game.get_state()))):
+                total[j] += p
+            n += 1
+            c = rng.randrange(len(ACTIONS))
+            game.make_action([b == BUTTONS[c] for b in BUTTONS], TICS_PER_DECISION)
+        game.close()
+    return [t / n for t in total]
+
+
+def run_control(args):
+    kills = []
+    for i in range(args.episodes):
+        rng, game, steps = random.Random(i), make_game(args.seed + i), 0
+        while not game.is_episode_finished() and steps < args.max_steps:
+            c = 2 if args.control == "attack" else rng.randrange(len(ACTIONS))
+            game.make_action([b == BUTTONS[c] for b in BUTTONS], TICS_PER_DECISION)
+            steps += 1
+        kills.append(int(game.get_game_variable(vzd.GameVariable.KILLCOUNT)))
+        game.close()
+        print(f"episode {i}: kills {kills[-1]}  steps {steps}", flush=True)
+    print(f"control {args.control}: mean kills {sum(kills) / len(kills):.2f}  (openjev baseline ~11)")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5], required=True)
+    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5])
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=2100)
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
+    ap.add_argument("--calibrate", action="store_true", help="variant 5: subtract each action's baseline p(yes), fitted on separate states")
+    ap.add_argument("--control", choices=["random", "attack"], help="no model: a random or always-attack policy, for reference")
     args = ap.parse_args()
+    if args.control:
+        return run_control(args)
+    if args.variant is None:
+        ap.error("--variant or --control is required")
     jev = Jev(args.model)
+    offset = [0.0] * len(ACTIONS)
+    if args.variant == 5 and args.calibrate:
+        offset = baseline_yes(jev)
+        print("baseline p(yes) fitted on separate states: " + " ".join(f"{a}={o:.3f}" for a, o in zip(ACTIONS, offset)), flush=True)
     describe = DESCRIBE.get(args.variant)  # None for variant 4, handled below
 
     kills = []
@@ -132,7 +174,7 @@ def main():
                 shown = describe(state)
             if args.variant == 5:
                 p_yes = per_action(jev, context)
-                choice = max(range(len(ACTIONS)), key=lambda j: p_yes[j])
+                choice = max(range(len(ACTIONS)), key=lambda j: p_yes[j] - offset[j])
                 shown = f"{context} p(yes) " + " ".join(f"{a}={p:.2f}" for a, p in zip(ACTIONS, p_yes))
             else:
                 choice = jev.probabilities(shown, ACTIONS, noun="action").argmax()
