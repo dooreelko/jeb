@@ -6,162 +6,81 @@ here we explore what can we do without telling the engine what to decide.
 
 ref: https://huggingface.co/AlexWortega/openjev/blob/main/code/doom.py
 
----
+----- AI agent updates -------
 
-## Decision record
+## Framing
 
-**Scenario**: vizdoom `defend_the_center` (same cfg openjev uses), so kills/episode is
-directly comparable to their ~11 baseline. 1 decision per 4 tics (~114ms game time),
-not realtime.
+- jev: the original closed/black-box decision product.
+- openjev: an open alternative approaching jev architecturally (trained NLI cross-encoder).
+- jeb (this repo): how close can plain llama.cpp + a vanilla model get to the other two.
 
-**Actions**: 3, matching openjev — turn left / turn right / attack.
+Broader question behind this task: is a jev-style one-pass readout useful for decisions,
+and are we expecting too much "intelligence" from a single call? Alternative worth
+testing: decompose the decision into small narrow judgments and compose the action from
+a quorum (closer to how brains / ensembles work).
 
-**Readout**: reuse `src/jev.py`'s `Jev` (single-pass option-logit readout) unchanged.
-Not openjev's NLI cross-encoder / fine-tuned MLP path.
+## Setup decisions
 
-**State description — the actual open question**: openjev's own `render_text()` buckets
-enemy offset (left/right/on, threshold ±0.015) and distance (very close/close/far,
-threshold on relative size) into words — same trap flappy hit (bucketed prompts biased
-the decision, saturating scores). Explore as a ladder of variants, not one final design:
+- vizdoom `defend_the_center` (openjev's scenario) so kills/episode compares to their ~11.
+- 3 actions as in openjev: turn left, turn right, attack. One decision per 4 tics, not realtime.
+- State comes from the game's object labels (enemy type, horizontal offset from crosshair,
+  apparent size) plus ammo/health. The player itself and transient effects (blood, bullet
+  puffs) are not enemies and are filtered out.
+- Readout: jeb's existing one-pass multiple-choice letter readout, unchanged.
+- Kept as a baseline entry point plus an experiments entry point with a variant switch,
+  mirroring how flappy is organised. Metric: kills/episode and decisions survived,
+  same seeds across variants, runs logged.
 
-1. mirror openjev's bucketed describe() as baseline — confirms comparable kills/episode
-   before diverging.
-2. finer-grained buckets — same idea, less coarse, see if bias shrinks.
-3. raw numeric state, no hand-picked words (enemy list with numeric offset/size, ammo,
-   health, kills as plain facts) — still single-pass letter readout. Goal state: model
-   judges purely from a scene description + option list, no baked-in directional bias.
-4. if (3) degrades badly: add a free-text reasoning pass before the same single-pass
-   action-letter readout — first point this goes beyond one forward pass. Open question
-   for when we get there: how exactly (second pass on top of jev, or something else).
+## Variant ladder and results (5 episodes each, same seeds)
 
-**Files**: `src/doom.py` (vizdoom env wrapper + current describe(), shaped like
-flappy.py) + `src/doom-experiments.py` (the ladder, shaped like flappy-experiments.py)
-+ `scripts/doom.sh` / `scripts/doom-experiments.sh` (copy `_common.sh` pattern from
-scripts/flappy.sh).
+| variant | idea | 0.8B | 27B |
+|---|---|---|---|
+| 1 | mirror openjev's bucketed wording (left/right/on, very close/close/far) | 0.00 | 5.80 |
+| 2 | finer buckets (7 offset, 5 distance) | 0.00 | — |
+| 3 | raw numbers, no descriptive words | 0.00 | — |
+| 4 | short free-text "plan" generated first, then the same readout | 0.00 | 5.40 |
 
-**Out of scope**: openjev's NLI cross-encoder / fine-tuned MLP, screen-buffer/vision
-input, scenarios other than defend_the_center.
+Findings:
+- 0.8B: all four variants give identical episodes step for step. The readout puts
+  ~0.6-0.8 on the first option ("turn left") almost regardless of the prompt; attack
+  rarely above ~0.13. Wording is not the variable — the joint multiple-choice readout
+  saturates on position at this size.
+- 0.8B with a reasoning pass: its own plan text is sensible ("aim at the Demon and fire")
+  but the readout ignores it. Chaining a weak component onto itself adds no capability.
+- 27B: reads the state (5.4-5.8 kills, survives longer), about half openjev's ~11.
+  Reasoning pass adds latency, no gain.
 
-**Metric**: kills/episode + steps survived per variant, logged like flappy runs
-(logs/, tee).
+## Rejected
 
----
+- Quantizing openjev's own model to GGUF: it is a backbone plus a trained classification
+  head (contradiction/entailment/neutral), not a causal LM. llama.cpp cannot run the head
+  even unquantized, and jeb's letter readout has nothing to read from it. Dropped.
+- Reasoning pass (variant 4) as the fix: no help at either size.
 
-## Variant 1 result (mirror openjev's bucketed describe)
+## Next: variant 5 — per-action independent judgments (quorum)
 
-5 episodes, seed 1000+i, max-steps 2100 (well above what's needed):
+Observation: openjev's scoring is itself a decomposition — one independent
+premise/hypothesis judgment per action, combined by softmax — whereas jeb asks one prompt
+to rank all options jointly. Variant 5 does the jeb-native equivalent: ask the model a
+narrow yes/no question per action, independently (no competing options in the prompt),
+then pick the action with the highest "yes". The combiner stays dumb (argmax/softmax), so
+no hand-tuned rule sneaks bias back in.
 
-```
-episode 0: kills 0  steps 73
-episode 1: kills 0  steps 66
-episode 2: kills 0  steps 82
-episode 3: kills 0  steps 81
-episode 4: kills 0  steps 66
-mean kills 0.00  (openjev baseline ~11)
-```
+Success criterion: run on 0.8B. Any real improvement over 0 kills means decomposition,
+not scale, is the lever — and we're onto something.
 
-0 kills every episode, dies (health hits 0) in ~70-80 decisions (~280-320 tics),
-nowhere near the 2100-tic timeout. Raw probabilities show why: "turn left" (option A,
-listed first) sits around 0.66-0.80 almost regardless of state or which enemy is
-visible — the model barely ever picks "attack". Same letter/position saturation flappy
-hit, worse here since it also means the bird (player) never fights back.
+## Variant 5 result (0.8B) and controls
 
-Also fixed along the way: the labels buffer includes self (DoomPlayer/Marine*) and
-transient FX (Blood, BulletPuff) alongside real monsters — filtered those out of
-enemies() (didn't change the result, bias dominates regardless).
+Controls, no model, same seeds: random 1.0 kills/episode, always-attack 1.6. So 0.8B on
+variants 1-4 (0.0) was worse than random; 27B (5.4-5.8) is genuinely reading the state.
 
-Next: variant 2/3 (finer buckets / raw numeric state) to see if the position bias is a
-property of the bucketed wording specifically, or of the single-pass letter-readout
-itself regardless of how the state is described.
+Variant 5 on 0.8B: 2.20 (1/3/2/4/1). Above both controls; small sample. The action
+breakdown matters more than the mean: with an enemy left it turned left or attacked, never
+right; with an enemy right it turned right or attacked, never left. Zero wrong-direction
+turns, where variants 1-4 turned left regardless. Decomposing broke the position
+saturation and exposed a real state-reading signal in the 0.8B model.
 
----
-
-## Variants 2 and 3: same bias, not the wording
-
-Ran both full (5 episodes, seed 1000+i, max-steps 2100):
-
-```
-variant 2 (finer buckets):  steps 73 66 82 81 66  kills 0 0 0 0 0
-variant 3 (raw numeric):    steps 73 66 82 81 66  kills 0 0 0 0 0
-```
-
-Identical to variant 1, episode-length to the tic, across all three. Checked raw
-probabilities directly on variant 3 (plain numeric offsets/sizes, no words at all):
-"turn left" still ~0.60-0.64, "attack" never above ~0.13, essentially unmoved by
-what is actually in the prompt (enemy present or not, offset value, nothing changes
-the ranking).
-
-**Diagnosis**: this is not a state-description problem. The 3-option single-pass
-letter-readout (src/jev.py) is strongly biased toward option A ("turn left", listed
-first) for this action-choice framing, close to independent of content. Changing
-describe() — the whole premise of variants 1-3 — cannot fix a bias that lives in the
-readout/prompt-framing for actions, not in how the scene is described.
-
-**Ladder paused here.** Variant 4 (reasoning pass before the readout) was the planned
-next step if a *content* variant degraded; it might still be worth trying since a
-free-text pass could break the A-bias, but that is a different hypothesis than the
-ladder was built to test, so flagging before spending more runs on it. Also worth
-checking whether the bias is doom-specific (3 actions, "action" noun) or shows up in
-flappy's framing too (2 options) — flappy's own history suggests a milder version of
-the same thing.
-
----
-
-## Model size matters: 27B breaks the A-bias
-
-Same variant 1 (bucketed describe), --model models/Qwen3.8-27B-UD-Q4_K_M.gguf, 5
-episodes:
-
-```
-episode 0: kills 5  steps 105
-episode 1: kills 6  steps 102
-episode 2: kills 6  steps 126
-episode 3: kills 7  steps 136
-episode 4: kills 5  steps 120
-mean kills 5.80  (openjev baseline ~11)
-```
-
-All runs above used the 0.8B model (script default) and got 0 kills, stuck near
-"turn left" regardless of content. The 27B model gets 5.80 mean kills and survives
-longer (102-136 vs 66-82 decisions) — clearly reading the state, not just saturating
-on option A. So the letter-position bias diagnosed above is (at least largely) a
-small-model capability problem, not an inherent flaw in the single-pass letter-readout
-itself. Still ~half openjev's ~11, room to close with variant 2/3 (finer/raw state) on
-the 27B model, or the reasoning-pass idea (variant 4).
-
----
-
-## Considered and dropped: quantizing openjev's own model
-
-openjev is not a causal LM: a Qwen3.5 backbone plus a separate trained NLI
-classification head (custom modeling_openjev.py, mlp_heads_35b/), scored by
-premise/hypothesis entailment via OpenJevCrossEncoder.rerank(), not next-token
-logits. GGUF/llama.cpp targets causal LMs; converting would drop the trained head
-and jev.py's letter-readout has nothing to read from a cross-encoder anyway. Not
-worth the mismatch — dropped in favor of pushing the 27B result further.
-
----
-
-## Variant 4 result: reasoning pass helps neither model
-
-5 episodes each, seed 1000+i, max-steps 2100:
-
-```
-0.8B: kills 0 0 0 0 0  steps 73 66 82 81 66   mean 0.00
-27B:  kills 5 6 6 5 5   steps 105 102 126 118 120  mean 5.40
-```
-
-0.8B: identical to variants 1/2/3, step for step. Its own generated reasoning read
-reasonably ("aim at the Demon and fire 26 rounds") but the letter-readout ignored it
-and still picked "turn left" — confirms the small-model readout bias overrides
-whatever free text precedes it, own words included.
-
-27B: 5.40 vs 5.80 for variant 1 (no reasoning) — no improvement, roughly noise, plus
-an extra generation call every decision (slower). The 27B model already reads state
-fine without a reasoning step; adding one doesn't help it and costs latency.
-
-**Ladder conclusion so far**: none of describe()-wording (v1-3) or a reasoning pass
-(v4) move the needle — what matters is model size (0.8B: stuck at 0; 27B: 5.40-5.80,
-still ~half openjev's ~11). Next real lever is probably closing that remaining gap on
-the 27B model itself (variant 2/3 there, or something else), not more readout
-scaffolding on top of it.
+What limits it: a flat prior towards "yes" for attack (~0.6 even on an empty screen), so it
+attacks ~87% of decisions and wastes ammo. Natural next step keeps the combiner dumb:
+remove each action's baseline "yes" level (measured on separate states, then frozen, as
+flappy's fitted threshold did) before the argmax. Also: more episodes for a firmer number.

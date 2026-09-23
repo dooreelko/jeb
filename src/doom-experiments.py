@@ -6,9 +6,10 @@ compared with one flag.
 Same env, actions, readout (src/jev.py) and 4-tics-per-decision cadence as src/doom.py — only
 describe() changes between variants.
 
-usage: scripts/doom-experiments.sh --variant {1,2,3,4} [--episodes N] [--max-steps M] [--model path.gguf]
+usage: scripts/doom-experiments.sh --variant {1,2,3,4,5} [--episodes N] [--max-steps M] [--model path.gguf]
        variant 4: a short free-text reasoning pass (see reason()) before the same letter readout,
-       on top of variant 1's describe().
+       on top of variant 1's describe(). variant 5: one independent yes/no judgment per action
+       (see per_action()), highest p(yes) wins.
 """
 import argparse
 
@@ -95,9 +96,18 @@ def reason(jev, context, max_tokens=24):
     return jev.model.generate(prompt, max_tokens=max_tokens).strip()
 
 
+def per_action(jev, context):
+    """Variant 5: one independent yes/no judgment per action, no rival options in the prompt,
+    then the action with the highest p(yes). The decomposition openjev's scoring does (one
+    judgment per hypothesis), done with jeb's letter readout. A constant bias towards the first
+    letter hits every call alike, so it cancels in the argmax."""
+    return [jev.probabilities(f'{context} Question: is "{a}" the right move right now?', ["Yes", "No"],
+                              noun="answer")[0] for a in ACTIONS]
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4], required=True)
+    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5], required=True)
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=2100)
@@ -120,7 +130,12 @@ def main():
                 shown = f"{context} Plan: {plan}"
             elif describe is not None:
                 shown = describe(state)
-            choice = jev.probabilities(shown, ACTIONS, noun="action").argmax()
+            if args.variant == 5:
+                p_yes = per_action(jev, context)
+                choice = max(range(len(ACTIONS)), key=lambda j: p_yes[j])
+                shown = f"{context} p(yes) " + " ".join(f"{a}={p:.2f}" for a, p in zip(ACTIONS, p_yes))
+            else:
+                choice = jev.probabilities(shown, ACTIONS, noun="action").argmax()
             action = [b == BUTTONS[choice] for b in BUTTONS]
             game.make_action(action, TICS_PER_DECISION)
             steps += 1
