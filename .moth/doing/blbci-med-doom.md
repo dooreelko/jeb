@@ -104,3 +104,25 @@ not the flat prior but how weak the per-action "yes" signal is at 0.8B. Rejected
 
 Controls (random, always-attack) are now part of the experiments entry point so the
 comparison is reproducible.
+
+## Variant 5 on 27B (partial run, stopped early)
+
+Same seeds as the earlier 27B variant 1 run:
+
+```
+seed:      1000 1001 1002 1003 1004   mean
+v1 27B:      5    6    6    7    5    5.8
+v5 27B:      8    6    7   12    5    7.6
+```
+
+Never worse per seed, +1.8 mean, one episode at 12 (above openjev's ~11). Decomposition
+and model size stack. Run was stopped after 7 of 10 episodes (later ones 5, 5, 5) to free
+the GPU: the paired comparison had already answered the question.
+
+## Variant 6: drop the letter scaffold
+
+Variant 5 still asks the yes/no through the multiple-choice format (A. Yes / B. No, read the
+letter). That adds an answer-to-letter mapping step, which is where 0.8B broke in variants
+1-4. Variant 6 asks a plain yes/no question and reads the yes/no tokens directly (on 0.8B,
+yes/Yes/no/No carry ~99% of the probability at that position). Wording ("right move" vs
+"best move", which is comparative) is tested as a separate variable, not in the same run.
