@@ -6,13 +6,16 @@ compared with one flag.
 Same env, actions, readout (src/jev.py) and 4-tics-per-decision cadence as src/doom.py — only
 describe() changes between variants.
 
-usage: scripts/doom-experiments.sh --variant {1,2,3,4,5,6} [--episodes N] [--max-steps M] [--model path.gguf]
+usage: scripts/doom-experiments.sh --variant {1,2,3,4,5,6,7} [--episodes N] [--max-steps M] [--model path.gguf]
        variant 4: a short free-text reasoning pass (see reason()) before the same letter readout,
        on top of variant 1's describe(). variant 5: one independent yes/no judgment per action
        (see per_action()), highest p(yes) wins. variant 6: the same without the letter scaffold,
-       plain yes/no tokens (see direct_yes()); --question right|best.
+       plain yes/no tokens (see direct_yes()); --question right|best. variant 7: per action, the
+       best readout from the agreement harness (bare instruction, quoted frame, yes/no tokens).
+       --agree N: no play, score readouts on N labelled states per target (--coded, --clock).
 """
 import argparse
+import math
 import random
 
 import vizdoom as vzd
@@ -138,7 +141,7 @@ def direct_yes(jev, context, question="right"):
     return out
 
 
-def baseline_yes(jev, episodes=3, base=50000):
+def baseline_yes(ask, episodes=3, base=50000):
     """Each action's mean p(yes) over states from random play on separate seeds, frozen before
     the scored episodes: the flat "yes" prior per action, subtracted before the argmax (as flappy's
     fitted threshold was). Keeps the combiner dumb: no rule, just a per-action offset."""
@@ -146,7 +149,7 @@ def baseline_yes(jev, episodes=3, base=50000):
     for i in range(episodes):
         game = make_game(base + i)
         while not game.is_episode_finished():
-            for j, p in enumerate(per_action(jev, describe_v1(game.get_state()))):
+            for j, p in enumerate(ask(game.get_state())):
                 total[j] += p
             n += 1
             c = rng.randrange(len(ACTIONS))
@@ -247,6 +250,26 @@ def ask_coded(jev, sc, rng):
     return out
 
 
+FOV = 90  # vizdoom's default horizontal field of view, degrees
+
+
+def clock(off):
+    """Screen offset (fraction of width from the centre) as a clock position in half-hour steps,
+    12 o'clock straight ahead: the bearing a pilot would call, no shared word with the actions."""
+    bearing = math.degrees(math.atan(2 * off * math.tan(math.radians(FOV / 2))))
+    half = round(bearing / 15)  # half-hours of 15 degrees
+    hour = (12 + half // 2 - 1) % 12 + 1
+    return f"{hour} o'clock" if half % 2 == 0 else f"between {hour} and {hour % 12 + 1} o'clock"
+
+
+def clock_scene(sc):
+    """openjev's wording with "left of / on / right of the crosshair" replaced by clock positions."""
+    parts = [f"a {name} at {clock(off)} ({'very close' if size > 0.45 else 'close' if size > 0.25 else 'far'})"
+             for name, off, size in sc["enemies"]]
+    seen = "You see " + ", ".join(parts) + "." if parts else "No enemies are visible right now."
+    return {**sc, "text": f"Doom, defending the center. Ammo: {sc['ammo']}. Health: {sc['health']}. {seen}"}
+
+
 def agree(args):
     import itertools
 
@@ -263,6 +286,8 @@ def agree(args):
             for combo in itertools.product(("decision", "bare"), ("quoted", "plain"), ("letters", "tokens"))]
     if args.coded:  # the best combination from the factorial, next to the coded prompt
         rows = [r for r in rows if r[0] == ("bare", "quoted", "tokens")] + [(("coded", "", ""), lambda c: ask_coded(jev, c, rng))]
+    if args.clock:  # the best combination, scene in clock positions instead of left/on/right of the crosshair
+        rows = [(("clock", "quoted", "tokens"), lambda c: ask_yes(jev, clock_scene(c), "bare", "quoted", "tokens"))]
     print("persona  wrap    readout  | AUROC left right attack  mean | mean p(yes) left right attack | acc on/left/right  attack when none")
     for (persona, wrap, readout), ask in rows:
         p = {k: np.array([ask(c) for c in v]) for k, v in states.items()}
@@ -295,7 +320,7 @@ def run_control(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5, 6])
+    ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5, 6, 7])
     ap.add_argument("--context", choices=list(CONTEXT), default="1", help="variants 4-6: the state text the questions are asked about (1 = openjev's wording, free = decision-free)")
     ap.add_argument("--question", choices=list(QUESTION), default="right", help="variant 6: ask for the right or the best move")
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
@@ -305,6 +330,7 @@ def main():
     ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
     ap.add_argument("--calibrate", action="store_true", help="variant 5: subtract each action's baseline p(yes), fitted on separate states")
     ap.add_argument("--control", choices=["random", "attack"], help="no model: a random or always-attack policy, for reference")
+    ap.add_argument("--clock", action="store_true", help="with --agree: only the best combination with the scene in clock positions")
     ap.add_argument("--coded", action="store_true", help="with --agree: only the best combination and the coded (symbol) prompt")
     ap.add_argument("--agree", type=int, default=0, metavar="N", help="no play: score every persona/wrap/readout combination on N labelled states per target")
     args = ap.parse_args()
@@ -316,8 +342,11 @@ def main():
         ap.error("--variant, --control or --agree is required")
     jev = Jev(args.model)
     offset = [0.0] * len(ACTIONS)
-    if args.variant == 5 and args.calibrate:
-        offset = baseline_yes(jev)
+    score = {5: lambda st: per_action(jev, CONTEXT[args.context](st)),
+             6: lambda st: direct_yes(jev, CONTEXT[args.context](st), args.question),
+             7: lambda st: ask_yes(jev, scene(st), "bare", "quoted", "tokens")}.get(args.variant)
+    if score and args.calibrate:
+        offset = baseline_yes(score)
         print("baseline p(yes) fitted on separate states: " + " ".join(f"{a}={o:.3f}" for a, o in zip(ACTIONS, offset)), flush=True)
     describe = DESCRIBE.get(args.variant)  # None for variant 4, handled below
 
@@ -334,8 +363,8 @@ def main():
                 shown = f"{context} Plan: {plan}"
             elif describe is not None:
                 shown = describe(state)
-            if args.variant in (5, 6):
-                p_yes = per_action(jev, context) if args.variant == 5 else direct_yes(jev, context, args.question)
+            if score:
+                p_yes = score(state)
                 choice = max(range(len(ACTIONS)), key=lambda j: p_yes[j] - offset[j])
                 shown = f"{context} p(yes) " + " ".join(f"{a}={p:.2f}" for a, p in zip(ACTIONS, p_yes))
             else:

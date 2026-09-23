@@ -13,3 +13,4 @@ models
 logs
 scores*
 _vizdoom.ini
+_vizdoom/
