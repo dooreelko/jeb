@@ -11,8 +11,8 @@ the same four sections, so they can later be read side by side for an overarchin
 Moth issues stay the decision records (what was decided and why); these files are the lab notebook
 (what was tested and what came out). One moth task can hold several experiments.
 
-The overarching analysis and lessons learned across all experiments will live in
-`LESSONS.md` (not written yet).
+The overarching analysis and lessons learned across all experiments live in
+[`LESSONS.md`](LESSONS.md) (first pass after experiment 17; update it as experiments land).
 
 ## Framing
 
