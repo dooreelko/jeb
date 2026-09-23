@@ -138,8 +138,7 @@ yes/Yes/no/No carry ~99% of the probability at that position). Wording ("right m
 
 Reading the yes/no tokens directly gives "attack" an even larger built-in "yes" than the
 letter form, so it collapses towards always-attack, and wrong-direction turns reappear.
-The hypothesis that the letter scaffold adds noise is refuted at 0.8B: for per-action
-yes/no, the multiple-choice letter form is the better readout. "Best" (comparative) was
+CORRECTED below: variants 5 and 6 differ in three ways at once (persona, framing, readout), so this run alone does not show the letter form is better. "Best" (comparative) was
 no better than "right". Variant 5 stays the per-action baseline.
 
 ## Decision: prompts must not contain the decision
@@ -162,3 +161,33 @@ about decision-free play.
 Next: variant 5 readout on a strictly decision-free doom description; and in flappy, a
 cheap agreement/AUROC check of letter vs yes/no readouts on openjev's numeric state with
 the decision lines dropped.
+
+## Why did variant 6 lose? Readout agreement (0.8B)
+
+Method: no play. Fixed states from random play on separate seeds, labelled from raw
+geometry (crosshair inside a monster's box = attack, else turn towards the nearest one,
+nothing visible = none), 40 per label. Every combination of the three ways variants 5
+and 6 differ (persona: "decision maker" vs bare instruction; framing: context quoted in
+jeb's "Given a context of" frame vs plain; readout: A/B letters vs yes/no tokens) is
+scored per action: AUROC of p(yes) separating states where that action is right from
+states where it is clearly wrong (signal), mean p(yes) (bias), argmax accuracy, and how
+often it attacks on an empty screen.
+
+Findings:
+- Neither variant 5 nor 6 really reads the scene. Almost all signal is "turn left"
+  (AUROC 0.64-0.81); "turn right" and "attack" sit at or below chance in nearly every
+  combination. Variant 5 beat 6 in play mostly via a stronger turn-left signal (0.72 vs
+  0.64) plus noise. No single factor explains it; they interact.
+- Suspected cause of the left/right asymmetry: the question wording itself, "is \"turn
+  right\" the right move right now?" uses "right" three times in two meanings, which
+  flattens p(yes) for turn right. Turn left has no collision, so the scene's "left of"
+  gets through. Present in variants 5 and 6 alike (and in "best move right now").
+- Attack is capped by the context, not the readout: openjev's wording says "exactly on"
+  only for a near-dead-centre enemy, so many crosshair-on-target states read "left of" /
+  "right of".
+- One combination reads all three actions (bare persona, quoted frame, yes/no tokens:
+  AUROC 0.74/0.80/0.73) but its per-action levels are not comparable across actions
+  (argmax accuracy 0.36), so it would need per-action calibration in play.
+
+Next: reword the question to avoid "right" and rerun the factorial with more states;
+then play the best combination with calibration.

@@ -27,18 +27,22 @@ def make_game(seed):
 
 
 SCREEN_W, SCREEN_H = 320, 240  # RES_320X240, set by defend_the_center.cfg
+# defend_the_center's labels buffer includes self (DoomPlayer/Marine*) and transient FX
+# (Blood, BulletPuff) alongside the actual monsters; only the latter are threats.
+NOT_A_THREAT = ("DoomPlayer", "Marine", "Blood", "BulletPuff")
+
+
+def threats(state):
+    """The labels of the visible monsters."""
+    if state is None or state.labels is None:
+        return []
+    return [l for l in state.labels if not l.object_name.startswith(NOT_A_THREAT)]
 
 
 def enemies(state):
     """Visible enemies as (name, offset, size): offset in [-0.5, 0.5] of screen width from
     centre, size as fraction of screen height. Sorted by distance from the crosshair."""
-    if state is None or state.labels is None:
-        return []
-    # defend_the_center's labels buffer includes self (DoomPlayer/Marine*) and transient FX
-    # (Blood, BulletPuff) alongside the actual monsters; only the latter are threats.
-    not_a_threat = ("DoomPlayer", "Marine", "Blood", "BulletPuff")
-    out = [(l.object_name, l.x / SCREEN_W + l.width / (2 * SCREEN_W) - 0.5, l.height / SCREEN_H)
-           for l in state.labels if not l.object_name.startswith(not_a_threat)]
+    out = [(l.object_name, l.x / SCREEN_W + l.width / (2 * SCREEN_W) - 0.5, l.height / SCREEN_H) for l in threats(state)]
     return sorted(out, key=lambda e: abs(e[1]))
 
 

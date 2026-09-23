@@ -18,7 +18,7 @@ import random
 import vizdoom as vzd
 from scipy.special import softmax
 
-from .doom import ACTIONS, BUTTONS, SCREEN_H, SCREEN_W, TICS_PER_DECISION, enemies, make_game
+from .doom import ACTIONS, BUTTONS, SCREEN_H, SCREEN_W, TICS_PER_DECISION, enemies, make_game, threats
 from .jev import Jev
 
 
@@ -86,7 +86,20 @@ def describe_v3(state):
     return f"Doom, defending the center. Ammo {int(ammo)}, health {int(health)}. {seen}"
 
 
+def describe_free(state):
+    """Decision-free (see moth blbci): raw per-object observables in the screen's own frame, no
+    relation to the crosshair computed in code. The model has to compare positions itself."""
+    ammo = state.game_variables[0] if state else 0
+    health = state.game_variables[1] if state else 0
+    es = enemies(state)
+    seen = ("Enemies on screen: " + "; ".join(f"a {name} at x {off + 0.5:.2f}, height {size:.2f}" for name, off, size in es) + "."
+            if es else "No enemies on screen.")
+    return (f"Doom, defending the center. Ammo {int(ammo)}, health {int(health)}. Screen x runs from 0 (left edge) "
+            f"to 1 (right edge); the crosshair is at x 0.50. {seen}")
+
+
 DESCRIBE = {1: describe_v1, 2: describe_v2, 3: describe_v3}
+CONTEXT = {"1": describe_v1, "free": describe_free}
 
 REASON_PROMPT = "In one short phrase, what should the player do right now and why?"
 
@@ -142,6 +155,91 @@ def baseline_yes(jev, episodes=3, base=50000):
     return [t / n for t in total]
 
 
+# ----------------------------------------------------------------------------- readout agreement
+# Why did variant 6 lose to variant 5? The two prompts differ in three ways at once; score every
+# combination on fixed, labelled states instead of playing (like flappy's --agree).
+
+def target(state):
+    """The obviously right action, from raw geometry: attack when the crosshair is inside a monster's
+    box, else turn towards the monster nearest the crosshair; "none" when nothing is visible."""
+    ts = threats(state)
+    if not ts:
+        return "none"
+    mid = SCREEN_W / 2
+    if any(l.x <= mid <= l.x + l.width for l in ts):
+        return "attack"
+    near = min(ts, key=lambda l: abs(l.x + l.width / 2 - mid))
+    return "turn left" if near.x + near.width / 2 < mid else "turn right"
+
+
+def labelled_states(n_per, base=60000, max_episodes=300):
+    """Up to n_per describe_v1 contexts for each target, from random play on separate seeds."""
+    rng, got, ep = random.Random(base), {k: [] for k in (*ACTIONS, "none")}, 0
+    while min(map(len, got.values())) < n_per and ep < max_episodes:
+        game = make_game(base + ep)
+        ep += 1
+        while not game.is_episode_finished():
+            state = game.get_state()
+            k = target(state)
+            if len(got[k]) < n_per:
+                got[k].append(describe_v1(state))
+            c = rng.randrange(len(ACTIONS))
+            game.make_action([b == BUTTONS[c] for b in BUTTONS], TICS_PER_DECISION)
+        game.close()
+    return got
+
+
+def ask_yes(jev, context, persona, wrap, readout):
+    """p(yes) per action for one combination of the three ways variants 5 and 6 differ.
+    persona: "You are a decision maker..." (v5) or a bare instruction (v6).
+    wrap: the context quoted inside jeb's "Given a context of ..." frame (v5) or plain text (v6).
+    readout: A. Yes / B. No letters (v5) or the yes/no tokens themselves (v6).
+    (decision, quoted, letters) is variant 5 exactly; (bare, plain, tokens) is variant 6 exactly."""
+    m = jev.model
+    letters = readout == "letters"
+    ans = 'with the letter of one option, "A" or "B"' if letters else "yes or no"
+    system = f"You are a decision maker. You can only answer {ans}." if persona == "decision" else \
+        ('Answer only "A" or "B".' if letters else "Answer only yes or no.")
+    yes, no = ([m.tok("A")], [m.tok("B")]) if letters else ([m.tok("yes"), m.tok("Yes")], [m.tok("no"), m.tok("No")])
+    out = []
+    for a in ACTIONS:
+        if wrap == "quoted":
+            user = f'Given a context of "{context} Question: is "{a}" the right move right now?"'
+            user += " and possible answers of\nA. Yes\nB. No\n\nWhich answer is the most likely one?" if letters else ""
+        else:
+            user = f'{context} Is "{a}" the right move right now?' + ("\nA. Yes\nB. No" if letters else "")
+        p = softmax(m.last_logits(m.chat(user, system=system))[yes + no])
+        out.append(float(p[:len(yes)].sum()))
+    return out
+
+
+def agree(args):
+    import itertools
+
+    import numpy as np
+    from sklearn.metrics import roc_auc_score
+    states = labelled_states(args.agree)
+    print("labelled states: " + ", ".join(f"{k} {len(v)}" for k, v in states.items()), flush=True)
+    jev = Jev(args.model)
+    # for each action: states where it is right vs states where it is clearly wrong
+    # (with nothing visible neither turn is wrong, so "none" only counts against attack)
+    neg = {"attack": ["turn left", "turn right", "none"], "turn left": ["turn right", "attack"], "turn right": ["turn left", "attack"]}
+    print("persona  wrap    readout  | AUROC left right attack  mean | mean p(yes) left right attack | acc on/left/right  attack when none")
+    for persona, wrap, readout in itertools.product(("decision", "bare"), ("quoted", "plain"), ("letters", "tokens")):
+        p = {k: np.array([ask_yes(jev, c, persona, wrap, readout) for c in v]) for k, v in states.items()}
+        aucs = []
+        for j, a in enumerate(ACTIONS):
+            pos, ng = p[a][:, j], np.concatenate([p[k][:, j] for k in neg[a]])
+            aucs.append(roc_auc_score([1] * len(pos) + [0] * len(ng), np.r_[pos, ng]))
+        allp = np.concatenate(list(p.values()))
+        acc = np.mean([np.mean(p[a].argmax(1) == j) for j, a in enumerate(ACTIONS)])
+        waste = np.mean(p["none"].argmax(1) == ACTIONS.index("attack"))
+        tag = "  = v5" if (persona, wrap, readout) == ("decision", "quoted", "letters") else \
+            "  = v6" if (persona, wrap, readout) == ("bare", "plain", "tokens") else ""
+        print(f"{persona:8} {wrap:7} {readout:8} | {aucs[0]:.3f} {aucs[1]:.3f} {aucs[2]:.3f}  {np.mean(aucs):.3f} | "
+              f"{allp[:, 0].mean():.2f} {allp[:, 1].mean():.2f} {allp[:, 2].mean():.2f} | {acc:.3f}  {waste:.2f}{tag}", flush=True)
+
+
 def run_control(args):
     kills = []
     for i in range(args.episodes):
@@ -159,6 +257,7 @@ def run_control(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5, 6])
+    ap.add_argument("--context", choices=list(CONTEXT), default="1", help="variants 4-6: the state text the questions are asked about (1 = openjev's wording, free = decision-free)")
     ap.add_argument("--question", choices=list(QUESTION), default="right", help="variant 6: ask for the right or the best move")
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
@@ -167,11 +266,14 @@ def main():
     ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
     ap.add_argument("--calibrate", action="store_true", help="variant 5: subtract each action's baseline p(yes), fitted on separate states")
     ap.add_argument("--control", choices=["random", "attack"], help="no model: a random or always-attack policy, for reference")
+    ap.add_argument("--agree", type=int, default=0, metavar="N", help="no play: score every persona/wrap/readout combination on N labelled states per target")
     args = ap.parse_args()
     if args.control:
         return run_control(args)
+    if args.agree:
+        return agree(args)
     if args.variant is None:
-        ap.error("--variant or --control is required")
+        ap.error("--variant, --control or --agree is required")
     jev = Jev(args.model)
     offset = [0.0] * len(ACTIONS)
     if args.variant == 5 and args.calibrate:
@@ -185,7 +287,7 @@ def main():
         steps = 0
         while not game.is_episode_finished() and steps < args.max_steps:
             state = game.get_state()
-            context = describe_v1(state)
+            context = CONTEXT[args.context](state)
             shown = context
             if args.variant == 4:
                 plan = reason(jev, context)
