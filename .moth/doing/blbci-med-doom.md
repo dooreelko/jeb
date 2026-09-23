@@ -248,3 +248,16 @@ states a good policy visits.
 Decision: every experiment is also summarised under experiments/ (hypothesis, setup,
 data, conclusion), towards an overarching lessons-learned analysis; this task's
 experiments are 08-15 there.
+
+## Clock scene in play; brevity style
+
+- Clock scene in play (27B, seeds 1000-1004): 6.2 kills, within noise of the other 27B
+  variants, but the cleanest policy yet: no wrong-direction turn, always attacks at
+  12 o'clock, never shoots an empty screen. Likely capped by aim resolution (it fires at
+  off-centre bearings; the 12 o'clock bin is wider than the crosshair).
+- Brevity (the same clock information as a terse radio call instead of prose): identical at
+  27B; no rescue for 0.8B, which also starts shooting empty screens ("No contact." pulls
+  it to attack). Density is free for the big model; for the small one any wording change
+  is its own experiment.
+
+Details: experiments 16 and 17.
