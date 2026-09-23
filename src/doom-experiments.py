@@ -102,7 +102,7 @@ def describe_free(state):
 
 
 DESCRIBE = {1: describe_v1, 2: describe_v2, 3: describe_v3}
-CONTEXT = {"1": describe_v1, "free": describe_free}
+CONTEXT = {"1": describe_v1, "free": describe_free, "clock": lambda st: clock_scene(scene(st))["text"]}
 
 REASON_PROMPT = "In one short phrase, what should the player do right now and why?"
 
@@ -253,17 +253,26 @@ def ask_coded(jev, sc, rng):
 FOV = 90  # vizdoom's default horizontal field of view, degrees
 
 
-def clock(off):
+def clock(off, brief=False):
     """Screen offset (fraction of width from the centre) as a clock position in half-hour steps,
     12 o'clock straight ahead: the bearing a pilot would call, no shared word with the actions."""
     bearing = math.degrees(math.atan(2 * off * math.tan(math.radians(FOV / 2))))
     half = round(bearing / 15)  # half-hours of 15 degrees
     hour = (12 + half // 2 - 1) % 12 + 1
-    return f"{hour} o'clock" if half % 2 == 0 else f"between {hour} and {hour % 12 + 1} o'clock"
+    if half % 2 == 0:
+        return f"{hour} o'clock"
+    return f"{hour}-{hour % 12 + 1} o'clock" if brief else f"between {hour} and {hour % 12 + 1} o'clock"
 
 
-def clock_scene(sc):
-    """openjev's wording with "left of / on / right of the crosshair" replaced by clock positions."""
+def clock_scene(sc, brevity=False):
+    """openjev's wording with "left of / on / right of the crosshair" replaced by clock positions.
+    brevity: the same information as a terse radio call ("Contact: Demon, 10-11 o'clock, far."), a
+    recognised register, instead of prose."""
+    if brevity:
+        dist = lambda size: "very close" if size > 0.45 else "close" if size > 0.25 else "far"
+        calls = [f"{name}, {clock(off, brief=True)}, {dist(size)}" for name, off, size in sc["enemies"]]
+        seen = "Contact: " + ". ".join(calls) + "." if calls else "No contact."
+        return {**sc, "text": f"Doom, defend the center. Ammo {sc['ammo']}, health {sc['health']}. {seen}"}
     parts = [f"a {name} at {clock(off)} ({'very close' if size > 0.45 else 'close' if size > 0.25 else 'far'})"
              for name, off, size in sc["enemies"]]
     seen = "You see " + ", ".join(parts) + "." if parts else "No enemies are visible right now."
@@ -287,7 +296,8 @@ def agree(args):
     if args.coded:  # the best combination from the factorial, next to the coded prompt
         rows = [r for r in rows if r[0] == ("bare", "quoted", "tokens")] + [(("coded", "", ""), lambda c: ask_coded(jev, c, rng))]
     if args.clock:  # the best combination, scene in clock positions instead of left/on/right of the crosshair
-        rows = [(("clock", "quoted", "tokens"), lambda c: ask_yes(jev, clock_scene(c), "bare", "quoted", "tokens"))]
+        rows = [(("brevity" if args.brevity else "clock", "quoted", "tokens"),
+                 lambda c: ask_yes(jev, clock_scene(c, args.brevity), "bare", "quoted", "tokens"))]
     print("persona  wrap    readout  | AUROC left right attack  mean | mean p(yes) left right attack | acc on/left/right  attack when none")
     for (persona, wrap, readout), ask in rows:
         p = {k: np.array([ask(c) for c in v]) for k, v in states.items()}
@@ -321,7 +331,7 @@ def run_control(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", type=int, choices=[*DESCRIBE, 4, 5, 6, 7])
-    ap.add_argument("--context", choices=list(CONTEXT), default="1", help="variants 4-6: the state text the questions are asked about (1 = openjev's wording, free = decision-free)")
+    ap.add_argument("--context", choices=list(CONTEXT), default="1", help="variants 4-7: the state text the questions are asked about (1 = openjev's wording, free = absolute screen x, clock = clock positions)")
     ap.add_argument("--question", choices=list(QUESTION), default="right", help="variant 6: ask for the right or the best move")
     ap.add_argument("--model", default="models/Qwen3.5-0.8B-Q4_K_M.gguf")
     ap.add_argument("--episodes", type=int, default=3)
@@ -330,6 +340,7 @@ def main():
     ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
     ap.add_argument("--calibrate", action="store_true", help="variant 5: subtract each action's baseline p(yes), fitted on separate states")
     ap.add_argument("--control", choices=["random", "attack"], help="no model: a random or always-attack policy, for reference")
+    ap.add_argument("--brevity", action="store_true", help="with --clock: the scene as a terse radio call instead of prose")
     ap.add_argument("--clock", action="store_true", help="with --agree: only the best combination with the scene in clock positions")
     ap.add_argument("--coded", action="store_true", help="with --agree: only the best combination and the coded (symbol) prompt")
     ap.add_argument("--agree", type=int, default=0, metavar="N", help="no play: score every persona/wrap/readout combination on N labelled states per target")
@@ -344,7 +355,7 @@ def main():
     offset = [0.0] * len(ACTIONS)
     score = {5: lambda st: per_action(jev, CONTEXT[args.context](st)),
              6: lambda st: direct_yes(jev, CONTEXT[args.context](st), args.question),
-             7: lambda st: ask_yes(jev, scene(st), "bare", "quoted", "tokens")}.get(args.variant)
+             7: lambda st: ask_yes(jev, {"text": CONTEXT[args.context](st)}, "bare", "quoted", "tokens")}.get(args.variant)
     if score and args.calibrate:
         offset = baseline_yes(score)
         print("baseline p(yes) fitted on separate states: " + " ".join(f"{a}={o:.3f}" for a, o in zip(ACTIONS, offset)), flush=True)

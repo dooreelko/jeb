@@ -40,6 +40,8 @@ The overarching analysis and lessons learned across all experiments will live in
 | 13 | [Doom: symbolic scene language](13-doom-symbolic-scene.md) | blbci | 0.8B at chance; 27B passes info but inverts turns |
 | 14 | [Doom: clock positions](14-doom-clock-positions.md) | blbci | 27B best readout yet, right direction; 0.8B inverts |
 | 15 | [Doom: best readout in play (27B)](15-doom-best-readout-play.md) | blbci | 5.8 kills, no better than joint MC; harness ≠ play |
+| 16 | [Doom: clock-position scene in play (27B)](16-doom-clock-play.md) | blbci | 6.2 kills; cleanest policy yet, capped by aim resolution |
+| 17 | [Doom: brevity (radio-call) scene](17-doom-brevity-scene.md) | blbci | pending |
 
 Considered and not run: quantising openjev's own model to GGUF (it is a backbone plus a trained
 classification head; llama.cpp cannot run the head at all). Recorded in moth blbci.
