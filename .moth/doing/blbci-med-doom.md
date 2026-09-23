@@ -228,3 +228,23 @@ doom, perception and decision are one hop apart by the nature of the game. The b
 matters is shared vocabulary between scene and actions. A natural-language middle ground
 without math or shared words: clock positions ("enemy at 10 o'clock, close"), a convention
 models know rather than one they must learn from the prompt.
+
+## Clock positions and the best harness readout in play
+
+Clock positions (perceptual bearing, no shared word with the actions, a convention models
+already know), best English readout otherwise, same labelled states:
+- 27B: AUROC turn left 0.94, turn right 0.92, attack 0.77: the best readout on any prompt,
+  turning the right way. Its inversion on the symbolic scene came from a convention it had
+  to learn from the prompt.
+- 0.8B: turns inverted (0.34 / 0.35) with clock positions too; its correct English turning
+  was word matching.
+
+Best harness readout in play (27B, per action, calibrated, seeds 1000-1004): 5.8 kills,
+equal to the joint multiple choice and below per-action letters (7.6). Harness separation
+predicts play only loosely, as in flappy: per-action ranking across states is not the
+per-state comparison between actions that play needs, and random-play states are not the
+states a good policy visits.
+
+Decision: every experiment is also summarised under experiments/ (hypothesis, setup,
+data, conclusion), towards an overarching lessons-learned analysis; this task's
+experiments are 08-15 there.
