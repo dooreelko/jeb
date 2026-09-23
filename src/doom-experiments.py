@@ -314,6 +314,34 @@ def agree(args):
               f"{allp[:, 0].mean():.2f} {allp[:, 1].mean():.2f} {allp[:, 2].mean():.2f} | {acc:.3f}  {waste:.2f}{tag}", flush=True)
 
 
+# ----------------------------------------------------------------------------- recording
+def captioned(game, step, action, p_yes, scale=1):
+    """The current frame, upscaled, with a caption bar: what was decided and why."""
+    from PIL import Image, ImageDraw
+    img = Image.fromarray(game.get_state().screen_buffer.transpose(1, 2, 0))  # CRCGCB -> HxWx3
+    img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
+    out = Image.new("RGB", (img.width, img.height + 28), "black")
+    out.paste(img, (0, 0))
+    d = ImageDraw.Draw(out)
+    kills = int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
+    ammo, health = (int(v) for v in game.get_state().game_variables)  # AMMO2, HEALTH per the cfg
+    d.text((4, img.height + 2), f"step {step}  kills {kills}  health {health}  ammo {ammo}", fill="white")
+    why = "" if p_yes is None else "yes: " + " ".join(f"{a.split()[-1]} {p:.2f}" for a, p in zip(ACTIONS, p_yes)) + "  "
+    d.text((4, img.height + 15), f"{why}> {action.upper()}", fill="yellow")
+    return out
+
+
+def write_gif(frames, path, fps=35, keep_every=4, colors=64):
+    """Palette-optimised gif through ffmpeg. Doom's noisy textures compress badly, so native size,
+    every fourth tic (8.75 fps) and 64 colours keep a full episode to a few MB."""
+    import subprocess
+    w, h = frames[0].size
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}",
+           "-r", str(fps / keep_every), "-i", "-",
+           "-vf", f"split[a][b];[a]palettegen=max_colors={colors}:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle", "-loop", "0", path]
+    subprocess.run(cmd, input=b"".join(f.tobytes() for f in frames[::keep_every]), check=True)
+
+
 def run_control(args):
     kills = []
     for i in range(args.episodes):
@@ -339,6 +367,7 @@ def main():
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
     ap.add_argument("--calibrate", action="store_true", help="variant 5: subtract each action's baseline p(yes), fitted on separate states")
+    ap.add_argument("--gif", metavar="PATH", help="record the first episode as a gif with a caption bar (decision and p(yes))")
     ap.add_argument("--control", choices=["random", "attack"], help="no model: a random or always-attack policy, for reference")
     ap.add_argument("--brevity", action="store_true", help="with --clock: the scene as a terse radio call instead of prose")
     ap.add_argument("--clock", action="store_true", help="with --agree: only the best combination with the scene in clock positions")
@@ -362,6 +391,7 @@ def main():
     describe = DESCRIBE.get(args.variant)  # None for variant 4, handled below
 
     kills = []
+    frames = [] if args.gif else None
     for i in range(args.episodes):
         game = make_game(args.seed + i)
         steps = 0
@@ -381,7 +411,14 @@ def main():
             else:
                 choice = jev.probabilities(shown, ACTIONS, noun="action").argmax()
             action = [b == BUTTONS[choice] for b in BUTTONS]
-            game.make_action(action, TICS_PER_DECISION)
+            if frames is None:
+                game.make_action(action, TICS_PER_DECISION)
+            else:  # same dynamics, one tic at a time so every frame is kept
+                game.set_action(action)
+                for _ in range(TICS_PER_DECISION):
+                    game.advance_action(1)
+                    if not game.is_episode_finished():
+                        frames.append(captioned(game, steps + 1, ACTIONS[choice], p_yes if score else None))
             steps += 1
             if args.watch:
                 print(f"step {steps}: {shown} -> {ACTIONS[choice]}", flush=True)
@@ -389,6 +426,10 @@ def main():
         kills.append(k)
         game.close()
         print(f"episode {i}: kills {k}  steps {steps}", flush=True)
+        if frames is not None:
+            write_gif(frames, args.gif)
+            print(f"gif: {len(frames)} frames -> {args.gif}", flush=True)
+            frames = None  # only the first episode is recorded
     print(f"variant {args.variant}: mean kills {sum(kills) / len(kills):.2f}  (openjev baseline ~11)")
 
 

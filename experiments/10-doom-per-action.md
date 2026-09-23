@@ -38,6 +38,10 @@ Paired with always-attack per seed: variant 5 never worse (+0.8, ~3 standard err
 | variant 1 | 5 | 6 | 6 | 7 | 5 | 5.8 |
 | variant 5 | 8 | 6 | 7 | 12 | 5 | **7.6** |
 
+Recording: [`../doom.gif`](../doom.gif), 27B seed 1003 (the 12-kill episode, reproduced exactly on
+replay), with a caption bar showing each decision's p(yes) per action. Made with `--gif PATH`.
+Visible in it: at point-blank range the model is lost (all three p(yes) near 0).
+
 ## Conclusion
 
 - Decomposition lifts 0.8B from worse-than-random to above both controls, and stacks with size (27B +1.8,
