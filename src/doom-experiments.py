@@ -172,8 +172,15 @@ def target(state):
     return "turn left" if near.x + near.width / 2 < mid else "turn right"
 
 
+def scene(state):
+    """What the harness keeps of a state: openjev's wording plus the facts, so other renderings
+    (the coded one) can be built from the same states."""
+    return {"text": describe_v1(state), "ammo": int(state.game_variables[0]), "health": int(state.game_variables[1]),
+            "enemies": enemies(state)}
+
+
 def labelled_states(n_per, base=60000, max_episodes=300):
-    """Up to n_per describe_v1 contexts for each target, from random play on separate seeds."""
+    """Up to n_per scenes for each target, from random play on separate seeds."""
     rng, got, ep = random.Random(base), {k: [] for k in (*ACTIONS, "none")}, 0
     while min(map(len, got.values())) < n_per and ep < max_episodes:
         game = make_game(base + ep)
@@ -182,20 +189,20 @@ def labelled_states(n_per, base=60000, max_episodes=300):
             state = game.get_state()
             k = target(state)
             if len(got[k]) < n_per:
-                got[k].append(describe_v1(state))
+                got[k].append(scene(state))
             c = rng.randrange(len(ACTIONS))
             game.make_action([b == BUTTONS[c] for b in BUTTONS], TICS_PER_DECISION)
         game.close()
     return got
 
 
-def ask_yes(jev, context, persona, wrap, readout):
+def ask_yes(jev, sc, persona, wrap, readout):
     """p(yes) per action for one combination of the three ways variants 5 and 6 differ.
     persona: "You are a decision maker..." (v5) or a bare instruction (v6).
     wrap: the context quoted inside jeb's "Given a context of ..." frame (v5) or plain text (v6).
     readout: A. Yes / B. No letters (v5) or the yes/no tokens themselves (v6).
     (decision, quoted, letters) is variant 5 exactly; (bare, plain, tokens) is variant 6 exactly."""
-    m = jev.model
+    m, context = jev.model, sc["text"]
     letters = readout == "letters"
     ans = 'with the letter of one option, "A" or "B"' if letters else "yes or no"
     system = f"You are a decision maker. You can only answer {ans}." if persona == "decision" else \
@@ -213,6 +220,33 @@ def ask_yes(jev, context, persona, wrap, readout):
     return out
 
 
+# abstract, symmetric symbols: no arrows, half-filled shapes, weapons, faces, or yes/no-looking marks
+SYMBOLS = list("●■◆★⬢♣♠♥♦✿❖⬟⬣☘◉✦⌘♜☾⚘")
+
+
+def ask_coded(jev, sc, rng):
+    """The scene and the question in abstract symbols, glossed once in English; answer T (yes) or N
+    (no). The scene shares no word with the actions, so matching "left of" to "turn left" on the
+    surface is impossible: the model has to connect them through the glossary. Symbols are drawn
+    afresh per state, so no one symbol's own bias sticks. Same information as openjev's wording."""
+    m = jev.model
+    enemy, left, on, right, far, close, very, empty, *acts = rng.sample(SYMBOLS, 8 + len(ACTIONS))
+    gloss = (f"{enemy} enemy. {left} left of the crosshair, {on} on the crosshair, {right} right of the crosshair. "
+             f"{far} far, {close} close, {very} very close. {empty} no enemies visible. "
+             + ", ".join(f"{s} {a}" for s, a in zip(acts, ("shoot", "turn left", "turn right"))) + ".")
+    lines = [f"{enemy} {left if off < -0.015 else right if off > 0.015 else on} {very if size > 0.45 else close if size > 0.25 else far}"
+             for _, off, size in sc["enemies"]] or [empty]
+    system = "You are a decision maker in a symbolic language. You answer only T for yes or N for no."
+    yes, no = [m.tok("T")], [m.tok("N")]
+    out = []
+    for s in acts:
+        user = (f"Game: Doom, defend the center. Health {sc['health']}, ammo {sc['ammo']}.\nSymbols: {gloss}\n"
+                f"Scene:\n" + "\n".join(lines) + f"\n{s}?")
+        p = softmax(m.last_logits(m.chat(user, system=system))[yes + no])
+        out.append(float(p[0]))
+    return out
+
+
 def agree(args):
     import itertools
 
@@ -224,9 +258,14 @@ def agree(args):
     # for each action: states where it is right vs states where it is clearly wrong
     # (with nothing visible neither turn is wrong, so "none" only counts against attack)
     neg = {"attack": ["turn left", "turn right", "none"], "turn left": ["turn right", "attack"], "turn right": ["turn left", "attack"]}
+    rng = random.Random(args.seed)
+    rows = [(combo, lambda c, combo=combo: ask_yes(jev, c, *combo))
+            for combo in itertools.product(("decision", "bare"), ("quoted", "plain"), ("letters", "tokens"))]
+    if args.coded:  # the best combination from the factorial, next to the coded prompt
+        rows = [r for r in rows if r[0] == ("bare", "quoted", "tokens")] + [(("coded", "", ""), lambda c: ask_coded(jev, c, rng))]
     print("persona  wrap    readout  | AUROC left right attack  mean | mean p(yes) left right attack | acc on/left/right  attack when none")
-    for persona, wrap, readout in itertools.product(("decision", "bare"), ("quoted", "plain"), ("letters", "tokens")):
-        p = {k: np.array([ask_yes(jev, c, persona, wrap, readout) for c in v]) for k, v in states.items()}
+    for (persona, wrap, readout), ask in rows:
+        p = {k: np.array([ask(c) for c in v]) for k, v in states.items()}
         aucs = []
         for j, a in enumerate(ACTIONS):
             pos, ng = p[a][:, j], np.concatenate([p[k][:, j] for k in neg[a]])
@@ -266,6 +305,7 @@ def main():
     ap.add_argument("--watch", action="store_true", help="print state (and reasoning, for variant 4) each decision")
     ap.add_argument("--calibrate", action="store_true", help="variant 5: subtract each action's baseline p(yes), fitted on separate states")
     ap.add_argument("--control", choices=["random", "attack"], help="no model: a random or always-attack policy, for reference")
+    ap.add_argument("--coded", action="store_true", help="with --agree: only the best combination and the coded (symbol) prompt")
     ap.add_argument("--agree", type=int, default=0, metavar="N", help="no play: score every persona/wrap/readout combination on N labelled states per target")
     args = ap.parse_args()
     if args.control:

@@ -191,3 +191,40 @@ Findings:
 
 Next: reword the question to avoid "right" and rerun the factorial with more states;
 then play the best combination with calibration.
+
+## Symbolic scene language (the user's idea): does the model read or word-match?
+
+Prompt: the scene and the question in abstract symmetric symbols (no arrows, faces,
+weapons or yes/no-looking marks), glossed once in English, re-drawn per state so no one
+symbol's bias sticks; answer T (yes) / N (no); one question per action. Same information as
+openjev's wording, but the scene shares no word with the actions. (T/N hold ~80% of the
+probability at the answer position on 0.8B; the rest is mostly a symbol.) Scored with the
+agreement harness, 40 states per label, next to the best plain combination (bare persona,
+quoted frame, yes/no tokens).
+
+| model | prompt | AUROC turn left | turn right | attack | attacks on empty screen |
+|---|---|---|---|---|---|
+| 0.8B | best plain | 0.74 | 0.80 | 0.73 | 38% |
+| 0.8B | coded | 0.53 | 0.50 | 0.50 | 28% |
+| 27B | best plain | 0.90 | 0.87 | 0.71 | 0% |
+| 27B | coded | 0.31 | 0.29 | 0.75 | 30% |
+
+- 0.8B: chance on the coded prompt. Its signal was surface word matching.
+- 27B: information does pass through the symbols (attack 0.75), but both turns are
+  inverted (~3 standard errors below chance): "enemy left of the crosshair" maps to
+  "turn right" (camera-pan confusion). So even 27B's correct turning in plain English is at
+  least partly word matching; forced to reason spatially, it gets direction backwards.
+- 27B with the best plain combination reads all three actions and never shoots at an
+  empty screen: the strongest readout found so far, worth taking into play.
+
+## Discussion: what "unbiased" can mean here
+
+A fully allocentric scene (enemy and own coordinates plus heading) would need vector math
+or trigonometry, which jev itself rules out for this kind of engine. And it is not more
+unbiased, only less processed: the renderer already projects the world onto the screen,
+as eyes do. The line that holds: perception-level quantities (bearing relative to gaze,
+apparent size, health, ammo) are fair; naming or pre-drawing the decision is not. In
+doom, perception and decision are one hop apart by the nature of the game. The bias that
+matters is shared vocabulary between scene and actions. A natural-language middle ground
+without math or shared words: clock positions ("enemy at 10 o'clock, close"), a convention
+models know rather than one they must learn from the prompt.
