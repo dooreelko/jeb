@@ -5,9 +5,10 @@ Where the evidence is thin (few episodes, one draw), it says so.
 
 ## Summary: what works so far
 
-The hypothesis holds for the mechanism: reading the logits gives jev-like, machine-readable,
-normalised output from a vanilla model on plain llama.cpp, with no generation. For classification
-and routing it behaves like jev; for decisions it only partly does. The levers, in order of evidence:
+The hypothesis holds: reading the logits gives jev-like, machine-readable, normalised output from a
+vanilla model on plain llama.cpp, with no generation. For classification and routing it behaves like
+jev. For decisions, an untrained 27B beats openjev's first trained version in Doom (7.6 vs 5.2 kills)
+and reaches about three quarters of its second (10.4); small models do not get there. The levers, in order of evidence:
 
 1. **A bigger model, for decisions.** The largest single lever: 0 → 5.8 kills in doom with the
    same prompt [08]. Not for classification, where a 4B already matches a 27B [01, 03].
@@ -15,7 +16,7 @@ and routing it behaves like jev; for decisions it only partly does. The levers, 
    beat one joint multiple-choice pass (0.8B above controls, 27B 5.8 → 7.6) [10]. This is the
    decomposition openjev's scoring does. Not yet tested: the fuller quorum (several narrower
    sub-questions combined by a vote), and whether openjev's trained head is what closes the rest
-   of the gap (7.6 vs ~11).
+   of the gap to openjev's second version (7.6 vs 10.4; their first scored 5.2).
 3. **A scene that shares no vocabulary with the answers, in a convention the model knows.**
    Clock positions instead of "left of the crosshair" removed word matching; the 27B read them
    correctly (its best reading, cleanest play) [14, 16]. Style and density do not matter: a terse
@@ -44,10 +45,10 @@ generating?
   generation, near-calibrated probabilities on modern models, confidence that separates right from wrong,
   and clean abstention through an explicit "none of the above" option [01, 03, 04]. That is the jev-like
   core, and a 4B model already does it.
-- **Decisions and control: only partly.** The model executes a comparison the prompt states (Flappy 28/28
+- **Decisions and control: partly (above openjev v1, below v2).** The model executes a comparison the prompt states (Flappy 28/28
   [06]), but it does not infer the move from a goal or a game description [06]. Without the pipeline
   pre-digesting the decision, a 0.8B fails [08, 12-14, 17], and a 27B reaches 5.8-7.6 kills in doom
-  against openjev's ~11 [08, 10, 15, 16]. openjev has a trained classification head; we use a vanilla
+  against openjev's 5.2 (v1) and 10.4 (v2) [08, 10, 15, 16]. openjev has a trained classification head; we use a vanilla
   model. That training is the most likely remaining gap, untested here.
 
 ## 1. Classification saturates early; decisions need scale

@@ -43,8 +43,9 @@ are tracked in the moth tasks (`moth ls`, `moth show <id>`).
 plain llama.cpp, and compare with jev and with [openjev](https://huggingface.co/AlexWortega/openjev),
 an open imitation of jev that uses a specially trained model.
 
-**How close we got.** For sorting text into categories, close. For making decisions in games, only
-partly.
+**How close we got.** Close enough to call the idea confirmed: a vanilla model on plain llama.cpp
+gives jev-style answers that a program can act on directly. For sorting text it behaves like jev.
+In Doom it does better than openjev's first, trained version, though not yet as well as its second.
 
 - *Sorting.* Given a Wikipedia article and 14 possible types (company, artist, village, film, …),
   4B and 9B models pick the right one 96-97% of the time, as often as when they write the answer out.
@@ -56,8 +57,12 @@ partly.
   already contains the answer: "the bird is below the centre of the gap" is a sentence the model just
   has to agree with, and code turns that into "flap". Told only the rules ("flapping pushes the bird
   up"), it fails completely.
-- *Doom.* openjev gets about 11 kills per game. Our best is 7.6 on average (one game 12) with the
-  largest model we can run (27B). The smallest (0.8B) does worse than pressing buttons at random.
+- *Doom.* openjev's first version scored 5.2 kills per game and its second 10.4 (random pressing
+  gets about 1; a bot that sees everything, 18.8). With the largest model we can run (27B), untrained,
+  we get 5.8 with a single question and 7.6 when asking about each move separately (one game 12):
+  above their first version, about three quarters of their second. The smallest model (0.8B) does
+  worse than pressing buttons at random. Caveats: 5 games per setup, and openjev does not say how big
+  its first version was.
 
 **Most important findings.**
 
@@ -83,8 +88,9 @@ partly.
    decisions.
 
 **Where the gap probably is.** openjev adds a small trained layer on top of its model to score each
-option; we use models as they are. That is the most likely reason for the remaining difference in
-Doom. We have not tested it.
+option, and its second version was trained on a much larger and harder mix of tasks; we use models as
+they are. That is the most likely reason for the remaining difference to their second version. We
+have not tested it.
 
 ## Getting started
 

@@ -319,3 +319,15 @@ this approach.
 **Open.** Finer aim within the clock convention; narrower sub-questions combined by a vote (the
 fuller quorum); whether a trained head closes the gap to openjev; thinking mode (bkv0v);
 real-time play (rxor3).
+
+## openjev's own numbers, and the verdict (2026-09-24)
+
+openjev's page gives 5.2 kills per episode for its first version (text state) and 10.4 for
+its second (trained on a much larger, harder mix; the ~11 quoted earlier is a caption);
+random about 1, a perfect-information bot 18.8. Our untrained 27B scores 5.8 with one joint
+question and 7.6 with one question per move: above openjev v1, about three quarters of v2.
+Caveats: 5 episodes per 27B setup; openjev does not state v1's model size.
+
+Verdict (user's call, agreed): the hypothesis is confirmed. A vanilla model on plain llama.cpp,
+read through its logits, gives jev-style machine-readable decisions at the level of openjev's
+first trained version; the remaining gap to v2 is most likely its training (untested).

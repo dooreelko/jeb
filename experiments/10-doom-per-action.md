@@ -49,7 +49,7 @@ Visible in it: at point-blank range the model is lost (all three p(yes) near 0).
 ## Conclusion
 
 - Decomposition lifts 0.8B from worse-than-random to above both controls, and stacks with size (27B +1.8,
-  one episode at 12, above openjev's ~11). The first real lever that is not model size.
+  one episode at 12; openjev scores 5.2 with its first version and 10.4 with its second). The first real lever that is not model size.
 - Calibration adds nothing: the offsets are too close to reorder choices.
 - Caveat found later (12): the scene wording ("left of") nearly names the action ("turn left"), so part
   of this may be word matching. Cost: 3 passes per decision (see moth xaj5x for shared-prefix batching).

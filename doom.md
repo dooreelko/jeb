@@ -3,7 +3,8 @@
 vizdoom's `defend_the_center`, the scenario openjev uses: the player stands in the middle of a round
 room, monsters come from all sides, and there are 26 bullets. Three moves: turn left, turn right, attack.
 The game waits for each decision (one decision per 4 game tics), so speed does not affect the score.
-openjev reports about 11 kills per episode. The model is a plain Qwen (0.8B or 27B), asked through the
+openjev reports 5.2 kills per episode for its first version and 10.4 (about 11) for its second; random
+pressing gets about 1, a bot with perfect information 18.8. The model is a plain Qwen (0.8B or 27B), asked through the
 one-pass readout. Decisions are in moth `blbci`, each experiment in `experiments/08-17`.
 
 ![Playing doom](./doom.gif)
@@ -52,7 +53,7 @@ Run it with `scripts/doom.sh` (the baseline) or `scripts/doom-experiments.sh --v
 | one question per move (A. Yes / B. No) | 2.3 (20 episodes) | **7.6** (max 12) |
 | one question per move, plain yes/no answer | 1.65 | - |
 | one question per move, clock positions | - | 6.2 |
-| openjev | | ~11 |
+| openjev v1 / v2 (trained) | | 5.2 / 10.4 |
 
 27B rows are 5 episodes; differences under about 1.5 kills are noise.
 

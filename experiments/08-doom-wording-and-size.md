@@ -35,6 +35,6 @@ wording carries; the openjev-style baseline should land near openjev's ~11 kills
 
 - At 0.8B the wording is not the variable: identical episodes step for step across all three. The joint
   MC readout saturates on the first option, making it worse than random.
-- At 27B the same readout reads the state: 5.8 kills (about half openjev's ~11), longer survival.
+- At 27B the same readout reads the state: 5.8 kills (above openjev's first version, 5.2; about half its second, 10.4), longer survival.
   So the position bias is largely a small-model capability issue.
 - Led to 09 (reasoning) and 10 (decomposition).
