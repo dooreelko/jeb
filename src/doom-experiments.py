@@ -353,7 +353,7 @@ def run_control(args):
         kills.append(int(game.get_game_variable(vzd.GameVariable.KILLCOUNT)))
         game.close()
         print(f"episode {i}: kills {kills[-1]}  steps {steps}", flush=True)
-    print(f"control {args.control}: mean kills {sum(kills) / len(kills):.2f}  (openjev baseline ~11)")
+    print(f"control {args.control}: mean kills {sum(kills) / len(kills):.2f}  (openjev v1 5.2, v2 10.4)")
 
 
 def main():
@@ -430,7 +430,7 @@ def main():
             write_gif(frames, args.gif)
             print(f"gif: {len(frames)} frames -> {args.gif}", flush=True)
             frames = None  # only the first episode is recorded
-    print(f"variant {args.variant}: mean kills {sum(kills) / len(kills):.2f}  (openjev baseline ~11)")
+    print(f"variant {args.variant}: mean kills {sum(kills) / len(kills):.2f}  (openjev v1 5.2, v2 10.4)")
 
 
 if __name__ == "__main__":

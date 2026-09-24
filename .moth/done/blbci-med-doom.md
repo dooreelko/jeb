@@ -331,3 +331,18 @@ Caveats: 5 episodes per 27B setup; openjev does not state v1's model size.
 Verdict (user's call, agreed): the hypothesis is confirmed. A vanilla model on plain llama.cpp,
 read through its logits, gives jev-style machine-readable decisions at the level of openjev's
 first trained version; the remaining gap to v2 is most likely its training (untested).
+
+## Final state (at close, 2026-09-24)
+
+Done by the user's decision. Deliverables: a short baseline entry point (openjev's scene text,
+one joint question) and an experiments entry point covering every variant, the reference
+players, the labelled-state scoring of prompts and gif recording; doom.md with the findings in
+plain language; experiments/08-17; the README's abstract and experiments/LESSONS.md; doom.gif of
+the best run (per-move questions, 27B, 12 kills).
+
+Outcome: hypothesis confirmed; best doom result 7.6 kills (27B, one question per move), above
+openjev v1 (5.2), about three quarters of v2 (10.4).
+
+Carried forward, not done here: shared-prefix batching (xaj5x), finer aim within clock
+positions, narrower sub-questions combined by a vote, a trained scoring head, thinking mode
+(bkv0v), real-time play (rxor3).

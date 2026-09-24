@@ -89,7 +89,7 @@ def main():
         kills.append(k)
         game.close()
         print(f"episode {i}: kills {k}  steps {steps}", flush=True)
-    print(f"mean kills {sum(kills) / len(kills):.2f}  (openjev baseline ~11)")
+    print(f"mean kills {sum(kills) / len(kills):.2f}  (openjev v1 5.2, v2 10.4)")
 
 
 if __name__ == "__main__":
