@@ -7,9 +7,20 @@ directly. This repo asks whether an ordinary open language model, run with plain
 starting idea.
 
 The trick: a language model works by predicting the next word, with a likelihood for every possible
-word. Instead of letting it write an answer, we label the options `A`, `B`, `C`, … and look at how
-likely it finds each letter as the next word. One step, no writing, and a probability per option.
-An extra last option, "None of the above", lets it decline.
+word. Instead of letting it write an answer, we ask a question with lettered answers, for example in
+Doom:
+
+```
+You see a Demon left of the crosshair (close).
+Is "attack" the right move right now?
+A. Yes
+B. No
+```
+
+and look at how likely it finds `A` as the next word. We do the same for "turn left" and "turn
+right" and make the move with the most likely "yes". One step per question, no writing, and a
+probability for every option. When sorting text, the options are the categories themselves
+(`A. Company`, `B. Artist`, …), plus an optional "None of the above" that lets the model decline.
 
 ![Playing Flappy bird](./flappy.gif)
 ![Playing doom](./doom.gif)
