@@ -10,6 +10,8 @@ calibration and latency against ordinary greedy generation, and tests the absten
 Findings and decisions are tracked in the moth tasks (`moth ls`, `moth show <id>`), not here.
 
 ![Playing Flappy bird](./flappy.gif)
+![Playing doom](./doom.gif)
+
 
 ## Getting started
 

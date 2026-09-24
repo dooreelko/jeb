@@ -261,3 +261,61 @@ experiments are 08-15 there.
   is its own experiment.
 
 Details: experiments 16 and 17.
+
+## Consolidated decision record (as of 2026-09-24)
+
+The sections above are the chronological log. This section is the current state in one place:
+enough to recreate the work. Per-experiment detail (hypothesis, setup, data, conclusion) lives
+in experiments/08-17; the cross-experiment reading in experiments/LESSONS.md.
+
+**Goal.** Play vizdoom's defend_the_center with jeb's logit readout on a vanilla model, compare with
+openjev's ~11 kills per episode, and find out what can be done without the prompt telling the
+engine what to decide.
+
+**Fixed setup.** openjev's scenario and 3 actions (turn left, turn right, attack); one decision per
+4 tics, turn-based; state from the game's object labels (type, bearing from the crosshair,
+apparent size) plus health and ammo, with self and transient effects filtered out. Every variant
+keeps the environment and cadence fixed; only the scene text and the readout change.
+
+**Method decisions.**
+- Controls always run alongside (random, always-attack), same seeds, paired comparisons.
+- Readouts are compared first on fixed labelled states (target from raw geometry, per-action
+  AUROC for signal, mean p(yes) for bias), which is fast; then in play, which is what counts.
+  Labelled-state separation predicts play only loosely.
+- A prompt is "decision-free" enough when the scene gives perception (bearing, size, health) and
+  shares no vocabulary with the actions; naming the decision or its words is not allowed.
+- Every experiment is written up under experiments/ as it lands.
+- A played episode can be recorded as a gif with a caption bar showing each decision's
+  per-action p(yes) and the choice, to see why the policy acted. Only the best-scoring run is
+  kept as a repo artefact (the 12-kill episode of per-action letters on 27B, reproduced exactly
+  on replay); gif kept small (native size, low frame rate, reduced palette).
+
+**What works (taken).**
+- Bigger model: the largest lever for decisions (0.8B worse than random, 27B 5.8).
+- One independent yes/no question per action, highest "yes" wins: 0.8B above controls, 27B 7.6
+  (best result, one episode 12). This is openjev's decomposition without its trained head.
+- Scene in a known convention with no shared words (clock positions): the 27B reads it correctly
+  and plays the cleanest policy (no wrong-way turn, never shoots an empty screen), 6.2 kills,
+  likely capped by the coarse aim resolution of clock bins.
+
+**Rejected.**
+- Rewording the bucketed scene (finer buckets, raw numbers) as the fix: wording was not the
+  variable at 0.8B.
+- A free-text reasoning pass before the readout: helps neither size.
+- Per-action calibration offsets: too small to reorder choices.
+- Reading yes/no tokens directly instead of A/B letters as a fix on its own: worse in play,
+  and confounded; readout factors interact.
+- Abstract symbols for the scene: 0.8B at chance, 27B inverts turns (a convention learned from
+  the prompt is not enough).
+- Terse radio-call style as a lever: equal to prose at 27B, worse at 0.8B. Density is free for
+  the big model; it is not what removes word matching.
+- Quantising openjev's own model: not runnable by llama.cpp (trained classification head).
+
+**Findings that shape the next steps.** The 0.8B only word-matches; decision-free scenes need the
+big model. The question wording can collide with action names ("the right move" vs "turn right").
+Per-action questions cost one pass each: shared-prefix batching (moth xaj5x) comes before scaling
+this approach.
+
+**Open.** Finer aim within the clock convention; narrower sub-questions combined by a vote (the
+fuller quorum); whether a trained head closes the gap to openjev; thinking mode (bkv0v);
+real-time play (rxor3).
