@@ -38,6 +38,10 @@ Paired with always-attack per seed: variant 5 never worse (+0.8, ~3 standard err
 | variant 1 | 5 | 6 | 6 | 7 | 5 | 5.8 |
 | variant 5 | 8 | 6 | 7 | 12 | 5 | **7.6** |
 
+Readout check (added later): the probability at the answer position sits on the letters, so p(A) is
+a real "yes", not leftovers: A+B hold 99.5% on average (min 99.0%) over 120 prompts on 0.8B, and 99.8%
+(min 99.5%) over 60 prompts on 27B.
+
 Recording: [`../doom.gif`](../doom.gif), 27B seed 1003 (the 12-kill episode, reproduced exactly on
 replay), with a caption bar showing each decision's p(yes) per action. Made with `--gif PATH`.
 Visible in it: at point-blank range the model is lost (all three p(yes) near 0).

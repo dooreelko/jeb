@@ -11,6 +11,8 @@ word. Instead of letting it write an answer, we ask a question with lettered ans
 Doom:
 
 ```
+You are a decision maker. You can only answer with the letter of one option, "A" or "B".
+
 You see a Demon left of the crosshair (close).
 Is "attack" the right move right now?
 A. Yes
