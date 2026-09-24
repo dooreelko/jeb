@@ -12,3 +12,5 @@ models
 .direnv
 logs
 scores*
+_vizdoom.ini
+_vizdoom/

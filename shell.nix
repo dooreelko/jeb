@@ -34,6 +34,9 @@ in pkgs.mkShellNoCC {
       pkgs.asciinema
       agg
 
+      # encode recorded doom frames into a gif
+      pkgs.ffmpeg
+
       # host toolchain for building llama-cpp-python
       pkgs.cmake
       pkgs.gnumake

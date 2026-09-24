@@ -35,6 +35,16 @@ you never decide when the task is done.
 
 Don't use worktrees, but feature branches instead
 
+## Experiments
+
+Every experiment gets a summary file under `experiments/` (see `experiments/README.md`): one file
+per hypothesis, numbered in run order, with the same four sections: Hypothesis, Setup, Data,
+Conclusion. Write or update it as soon as an experiment's data is in (also for negative, rejected
+or confounded results), and add it to the index in `experiments/README.md`. Moth stays the decision
+record; `experiments/` is the lab notebook. Reason: the goal is an overarching analysis of all
+experiments and lessons learned (`experiments/LESSONS.md`, updated as experiments land), which needs every
+experiment written up in a comparable form.
+
 ## Specs
 
 Moth is the primary spec destination for this repo, not `docs/superpowers/specs/`.

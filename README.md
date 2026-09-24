@@ -1,15 +1,96 @@
 # Let's see how close can we get to Jev
 
-See [IDEA.md](IDEA.md) for the core concept.
+[Jev](https://docs.typesafe.ai) is a product that answers questions with a choice from a fixed list
+and a probability for each option, instead of free text, so a program can act on the answer
+directly. This repo asks whether an ordinary open language model, run with plain
+[llama.cpp](https://github.com/ggml-org/llama.cpp), can do the same. See [IDEA.md](IDEA.md) for the
+starting idea.
 
-Short version: take a plain LLM, don't generate. Do one forward pass and read the next-token
-distribution over the answer tokens. The approach is **multiple choice**: options are labelled
-`A, B, C, ...`, and the probabilities are a softmax over just those letters' logits. An optional
-last option, "None of the above", lets the model abstain. This repo measures accuracy,
-calibration and latency against ordinary greedy generation, and tests the abstention.
-Findings and decisions are tracked in the moth tasks (`moth ls`, `moth show <id>`), not here.
+The trick: a language model works by predicting the next word, with a likelihood for every possible
+word. Instead of letting it write an answer, we ask a question with lettered answers, for example in
+Doom:
+
+```
+You are a decision maker. You can only answer with the letter of one option, "A" or "B".
+
+You see a Demon left of the crosshair (close).
+Is "attack" the right move right now?
+A. Yes
+B. No
+```
+
+and look at how likely it finds `A` as the next word. We do the same for "turn left" and "turn
+right" and make the move with the most likely "yes". One step per question, no writing, and a
+probability for every option. When sorting text, the options are the categories themselves
+(`A. Company`, `B. Artist`, …), plus an optional "None of the above" that lets the model decline.
 
 ![Playing Flappy bird](./flappy.gif)
+![Playing doom](./doom.gif)
+
+## Experiments
+
+- **Sorting text into categories**: news topics and the type of a Wikipedia article.
+- **[Flappy Bird](flappy.md)**: the bird flaps or not, one decision per frame.
+- **[Doom](doom.md)**: turn left, turn right or shoot, against monsters coming from all sides.
+
+Every experiment is written up in [experiments/](experiments/README.md) (question, setup, data,
+conclusion), with an overall reading in [experiments/LESSONS.md](experiments/LESSONS.md). Decisions
+are tracked in the moth tasks (`moth ls`, `moth show <id>`).
+
+## Findings
+
+**Goal.** Get jev-like answers (a choice plus a probability per option) out of a vanilla model on
+plain llama.cpp, and compare with jev and with [openjev](https://huggingface.co/AlexWortega/openjev),
+an open imitation of jev that uses a specially trained model.
+
+**How close we got.** Close enough to call the idea confirmed: a vanilla model on plain llama.cpp
+gives jev-style answers that a program can act on directly. For sorting text it behaves like jev.
+In Doom it does better than openjev's first, trained version, though not yet as well as its second.
+
+- *Sorting.* Given a Wikipedia article and 14 possible types (company, artist, village, film, …),
+  4B and 9B models pick the right one 96-97% of the time, as often as when they write the answer out.
+  The probabilities are honest: when the model is unsure it is usually wrong, so the least confident fifth of
+  the answers holds most of the mistakes and can be sent to a human. With a "None of the above"
+  option it rejects 95-99% of articles whose type is not on the list, while wrongly rejecting only
+  about 1-2% of the rest. A bigger model did not do better.
+- *Flappy Bird.* 28 out of 28 pipes, matching openjev, but only because the description of the game
+  already contains the answer: "the bird is below the centre of the gap" is a sentence the model just
+  has to agree with, and code turns that into "flap". Told only the rules ("flapping pushes the bird
+  up"), it fails completely.
+- *Doom.* openjev's first version scored 5.2 kills per game and its second 10.4 (random pressing
+  gets about 1; a bot that sees everything, 18.8). With the largest model we can run (27B), untrained,
+  we get 5.8 with a single question and 7.6 when asking about each move separately (one game 12):
+  above their first version, about three quarters of their second. The smallest model (0.8B) does
+  worse than pressing buttons at random. Caveats: 5 games per setup, and openjev does not say how big
+  its first version was.
+
+**Most important findings.**
+
+1. **Model size matters for decisions, not for sorting.** A 4B sorts as well as a 27B, but in Doom
+   the same question gives 0 kills with the 0.8B and 5.8 with the 27B.
+2. **Ask about each option separately.** "Which move: A. turn left, B. turn right, C. attack?" makes
+   a small model pick the first option almost always. Asking "is attack the right move?", "is turn
+   left…?", "is turn right…?" separately and taking the most confident yes lifted the 0.8B above
+   random play and the 27B from 5.8 to 7.6 kills. openjev also judges each move separately.
+3. **Small models match words instead of reading the situation.** If the scene says "a monster left
+   of the crosshair", the small model turns left because "left" appears in both. Say "a monster at
+   11 o'clock" instead, and it turns the wrong way. The big model handles the clock positions and plays
+   the most sensible game (it never turns away from a monster and never shoots at an empty screen),
+   but it gets left and right backwards when the positions are given as made-up symbols.
+4. **What the description says matters more than how the question is asked.** Plain statements
+   worked out in code ("far below", "rising fast") work best. Raw numbers the model has to compare
+   itself do not: given the bird's height and the gap's edges, it cannot tell whether the bird is
+   below the gap. Short radio-style descriptions work as well as full sentences for the big model.
+5. **Letting the model think first did not help.** The small model wrote "aim at the Demon and fire"
+   and then turned left anyway. The big one did not need it.
+6. **Small models react to wording details.** "Is 'turn right' the right move right now?" uses
+   "right" in two meanings, and that alone blurred the answer; a trailing full stop shifted Flappy's
+   decisions.
+
+**Where the gap probably is.** openjev adds a small trained layer on top of its model to score each
+option, and its second version was trained on a much larger and harder mix of tasks; we use models as
+they are. That is the most likely reason for the remaining difference to their second version. We
+have not tested it.
 
 ## Getting started
 
@@ -47,131 +128,6 @@ tail -f "$(ls -t logs/*.log | head -1)"
 ```
 
 It prints `i/N` every 10 examples, and the full report when done.
-
-## Configuration
-
-| What | Where | Default |
-|---|---|---|
-| Model file | 1st arg of `scripts/run.sh` | `models/Qwen3.5-4B-Q4_K_M.gguf` |
-| Number of examples | 2nd arg | 200 |
-| Dataset | `--dataset` | `ag_news` (4 classes); also `dbpedia_14` (14 classes) |
-| Abstention test | `--hide K` | off; K classes are hidden from the options |
-| Which classes get hidden | `--hide-seed` | 0 |
-| CPU threads, context size | `Model.__init__` in `src/common.py` | 16, 2048 |
-| GPU offload | `Model.__init__` | always on, all layers (no switch) |
-| GPU architecture | `HSA_OVERRIDE_GFX_VERSION` in `shell.nix`, `AMDGPU_TARGETS` in `scripts/build-llama.sh` | `gfx1150` (see below) |
-| Sampling | `load()` in `src/data.py` | test split, shuffle seed 0, texts cut to 600 chars |
-
-**Adding a dataset** is one entry in `DATASETS` in `src/data.py`: the Hugging Face id, the split,
-the class names (index = label id, written as the model should read them) and how to turn a row
-into text. MC supports up to 26 options, including the abstain option.
-
-**The GPU setup is specific to this machine.** The Radeon 860M is `gfx1152`, for which the
-rocBLAS/hipBLASLt kernels in nixpkgs do not exist, so `shell.nix` presents it as `gfx1150`
-(`HSA_OVERRIDE_GFX_VERSION=11.5.0`) and llama.cpp is built for `gfx1150`. On other AMD hardware,
-change both. The GPU is an integrated one that shares system RAM, so it is only slightly faster
-than the CPU cores for prefill; the point of using it is to free the CPUs.
-
-Scores are saved so metrics can be recomputed without re-running inference. A run overwrites the
-file of the same name.
-
-- standard run: `scores_<dataset>_<model file>.npz` with `y`, `gen`, `mc` and latencies `lat_*`
-- abstention run: `scores_<dataset>_hide<K>s<seed>_<model file>.npz` with `A` (scores with the
-  abstain option last), `B` (scores over the visible classes only), `y` (labels over the visible
-  classes, -1 = out of scope), `y_full`, `hidden` (ids of the hidden classes) and `lat`
-
-## How it works
-
-```
-scripts/
-  run.sh          run src.eval in the nix shell, tee the output to logs/
-  flappy.sh       play Flappy Bird with the winning setup (src/flappy.py), tee the output to logs/
-  flappy-experiments.sh  the full experiment runner (src/flappy-experiments.py)
-  build-llama.sh  rebuild llama-cpp-python with the HIP backend
-  _common.sh      shared helper: finds the project root, re-enters the nix shell
-src/
-  common.py   Model wrapper: load, chat template, last_logits(); shared prompt framing
-  data.py     dataset registry and loader; hide_classes for the abstention test
-  mc.py       score_mc: one pass, options labelled A, B, C, ..., read the label-token logits
-  gen.py      baseline: greedy generation of up to 8 tokens, parsed back to a class
-  metrics.py  accuracy, NLL, ECE, temperature fit
-  abstain.py  the abstention test and its metrics
-  eval.py     runner (dispatches to abstain.py for --hide)
-  jev.py      Jev: probabilities over any list of options (a thin wrapper on score_mc)
-  flappy.py   the winning Flappy Bird setup in about 90 lines: game, semantic state, one-pass readout
-  flappy-experiments.py  every prompt, option style and policy we tried, with the metrics
-```
-
-**Prompts.** They are rendered with the chat template embedded in the GGUF, so any model family
-works. Control tokens are tokenized as real special tokens (the default is to spell them out as
-plain text, which silently degrades the prompt). Reasoning mode is switched off by prefilling the
-empty reasoning block, so the very next token is the answer.
-
-**Readout.** `Model.last_logits` runs one forward pass and returns the vocab logits at the last
-position. It reads them from the llama.cpp context (`llm._ctx.get_logits()`, a private API)
-because `llm.scores` stays all zeros unless `logits_all=True`. Getting that wrong shows up as
-exactly uniform probabilities. Reading the logits also forces the asynchronous GPU work to
-finish, which the latency measurement relies on.
-
-**The scorer** (`mc.py`). One pass per article. The prompt lists the classes as `A. ...`,
-`B. ...`, the instruction names exactly the letters in use, and the score per class is the
-logit of its letter. With `abstain=True` a last option, "None of the above", is appended and
-scored like any other.
-
-**Metrics** (`metrics.py`). The scores are split in half by index. A temperature `T` is fitted on
-the first half by minimising NLL, and everything is reported on the second half.
-
-- accuracy, next to the chance level
-- NLL and ECE (10 bins), both raw (`T=1`) and after temperature scaling (`cal`)
-- latency per question for `mc` and the generation baseline (after a warm-up pass)
-
-The generation baseline is there for reference only. It has no probabilities, so it only gets
-accuracy and latency.
-
-## The abstention test
-
-To get out-of-scope examples with known labels, `--hide K` removes K classes from the options.
-Their examples are then out of scope, and the right answer for them is to abstain. Two arms are
-scored on the same examples (`abstain.py`):
-
-- **A**: the visible classes plus "None of the above"; abstaining means predicting that option.
-- **B**: the visible classes only; abstaining means the top probability is below a threshold.
-
-The report gives the in-scope accuracy of both arms, arm A's abstention recall and false-abstain
-rate, the AUROC of each arm at separating in-scope from out-of-scope (p(None) for A, one minus
-the top probability for B), the recall of each at a fixed 5% false-abstain rate, and the recall
-per hidden class. Which classes are hidden matters a lot, since a hidden class next to a visible
-lookalike (a Film beside an Album) is close to impossible to reject, so treat one draw as one
-sample and vary `--hide-seed`.
-
-## Flappy Bird vs openjev
-
-[openjev](https://huggingface.co/AlexWortega/openjev) plays Flappy Bird with a fine-tuned NLI model
-(about 27.5 pipes out of a possible 28). We run the same game, turn-based, through the multiple-choice
-readout (`scripts/flappy.sh`; it draws the game in the terminal, `--no-watch` turns that off; the ablations are in
-`scripts/flappy-experiments.sh`). Details in [flappy.md](flappy.md).
-
-- With raw numbers in the prompt the 4B scores at most 8.33 pipes, and 0 with openjev's verbatim text.
-- With the state bucketed in code and sent as words ("The bird is far below the centre of the gap and is
-  rising fast."), as the Jev 1.13 docs recommend, it scores **28 in all six episodes** at plain argmax,
-  matching openjev's number, and again on six fresh seeds.
-- **Best approach so far:** a semantic state (named buckets, only the fields the decision needs, no
-  numbers), options worded like the state ("The bird is below/above the centre of the gap"), plain
-  argmax. Tricks such as thresholds come last.
-- Read it carefully: the model executes a stated comparison, it does not infer the move. With
-  "Flap" / "Do nothing" and only a game description it scores 0. The statement-to-move mapping is
-  hand-written, and openjev's model reads raw numbers, so this is not a like-for-like comparison.
-  6 episodes, one model.
-
-## Caveats
-
-- Only the held-out half is scored for calibration (250 examples at 500), so accuracy
-  differences of a few points are within noise.
-- The generation baseline is the best case for generation: a terse answer capped at 8 tokens
-  with thinking off. One-pass readout therefore does not beat it on latency here. A chat-style
-  baseline with long answers, and shared-context batching of several questions, are not measured.
-- Several questions per pass and non-enum outputs are not tested.
-- The models are 4-bit quantized and run on a shared-memory iGPU.
 
 ## License
 
