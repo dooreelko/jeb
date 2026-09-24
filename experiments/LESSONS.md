@@ -3,6 +3,38 @@
 A cross-cutting reading of the experiments in this folder. Numbers in brackets are experiment files.
 Where the evidence is thin (few episodes, one draw), it says so.
 
+## Summary: what works so far
+
+The hypothesis holds for the mechanism: reading the logits gives jev-like, machine-readable,
+normalised output from a vanilla model on plain llama.cpp, with no generation. For classification
+and routing it behaves like jev; for decisions it only partly does. The levers, in order of evidence:
+
+1. **A bigger model, for decisions.** The largest single lever: 0 → 5.8 kills in doom with the
+   same prompt [08]. Not for classification, where a 4B already matches a 27B [01, 03].
+2. **One question per candidate, highest "yes" wins.** Independent per-action yes/no judgments
+   beat one joint multiple-choice pass (0.8B above controls, 27B 5.8 → 7.6) [10]. This is the
+   decomposition openjev's scoring does. Not yet tested: the fuller quorum (several narrower
+   sub-questions combined by a vote), and whether openjev's trained head is what closes the rest
+   of the gap (7.6 vs ~11).
+3. **A scene that shares no vocabulary with the answers, in a convention the model knows.**
+   Clock positions instead of "left of the crosshair" removed word matching; the 27B read them
+   correctly (its best reading, cleanest play) [14, 16]. Style and density do not matter: a terse
+   radio call equals prose at 27B and hurts 0.8B [17]. Needs the big model; the 0.8B only word-matches.
+4. **Pre-computed named buckets** are the most reliable lever in practice (Flappy 28/28 [06], and
+   jev's own advice), legitimate when the bucket is a perception, not the decision itself.
+
+Also essential:
+
+- **Speed and cost are not reproduced.** One pass is not faster than a short generated answer, and
+  per-candidate questions cost N passes; shared-prefix batching (moth xaj5x) is the prerequisite [01, 03].
+- **Readout hygiene:** check the probability mass at the answer position; avoid lexical collisions
+  in the question ("the right move" vs "turn right"); change one prompt factor at a time, since
+  persona, framing and readout interact [02, 11, 12].
+- **For classification:** an explicit "none of the above" option beats confidence thresholds for
+  abstention; calibration must be fitted per model [04].
+- **Measurement:** controls (random, always-act), balanced metrics, paired seeds; most doom numbers
+  are 5 episodes, so differences under ~1.5 kills are noise [05, 10].
+
 ## The short answer to jeb's question
 
 How close do plain llama.cpp and a vanilla model get to jev / openjev by reading logits instead of
